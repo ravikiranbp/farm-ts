@@ -1,9 +1,68 @@
 # farm-ts
 
-Minimal split backend/frontend starter: **FastAPI + MongoDB** behind a
-**Vite + React 19 + TypeScript** frontend, joined by a small typed fetch layer
-over `/api`. This is a bare skeleton — no app features are implemented. Build on
-top of it.
+V Tech Elevators public website and staff business console: **FastAPI + MongoDB**
+behind a **Vite + React 19 + TypeScript** frontend, joined by a typed fetch layer
+over `/api`. Includes enquiries, leads, customers, follow-ups, inspections,
+quotations, orders, service/AMC, reports, and administration.
+
+## Local Windows setup
+
+Use Python 3.12, a current Node.js version supported by Vite, Yarn, and MongoDB.
+The Emergent editor add-ons are not required and have been removed.
+
+Configure `backend\.env` for local development:
+
+```dotenv
+MONGO_URL=mongodb://127.0.0.1:27017
+DB_NAME=vtech
+CORS_ORIGINS=http://localhost:3000
+APP_URL=http://localhost:3000
+APP_TZ=Asia/Kolkata
+```
+
+MongoDB must be running before seeding or using the API. If installed as a Windows
+service, start that service. For the standalone MongoDB 8.0.38 installed during
+local setup, run the following in a separate PowerShell terminal:
+
+```powershell
+$data = Join-Path $env:LOCALAPPDATA 'farm-ts\mongodb\data'
+New-Item -ItemType Directory -Force -Path $data | Out-Null
+& "$env:LOCALAPPDATA\Programs\MongoDB\mongodb-win32-x86_64-windows-8.0.38\bin\mongod.exe" --dbpath $data --bind_ip 127.0.0.1 --port 27017
+```
+
+Backend, from the repository root:
+
+```powershell
+py -3.12 -m venv backend\.venv
+$env:PIP_USER = 'false'
+& .\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+cd backend
+& .\.venv\Scripts\python.exe seed.py
+& .\.venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8001 --reload
+```
+
+Frontend, in another terminal from the repository root:
+
+```powershell
+cd frontend
+yarn install
+yarn dev --host 127.0.0.1 --strictPort
+```
+
+Open `http://localhost:3000`; staff login is at `/login` and the API check is
+`http://localhost:8001/api/`. Run `yarn build` in `frontend` to type-check and build.
+For managed package registries, use `yarn install --registry (npm config get registry)`.
+If Node needs the Windows certificate store, set `$env:NODE_USE_SYSTEM_CA = '1'`;
+do not disable TLS verification.
+
+Seeding creates sample data and staff accounts; change the sample passwords
+before deployment. The local MongoDB data is outside Git, under the data directory
+above. Uploaded/generated PDFs are in `backend\uploads`; preserve them along with
+database backups. See `SelfDeploy.md` for deployment and sample account details.
+
+The remaining sections include conventions inherited from the original hosted
+starter. Pod paths, supervisor commands, and `/status` examples are not local
+Windows setup instructions.
 
 ## Layout
 

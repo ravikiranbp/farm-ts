@@ -156,10 +156,9 @@ Default seeded staff logins (**change them before going live** — step 8):
 | Manager | manager@vtech.in | Manager@123 |
 | Telecaller | priya@vtech.in | Telecaller@123 |
 
-> Optional: `frontend/package.json` contains two dev-only editor add-ons `@emergentbase/overlay` and
-> `@emergentbase/visual-edits` (downloaded from a public URL). They are not needed. To remove them:
-> delete those two lines from `package.json`, remove the `visualEdits` import/plugin and the
-> `loadEmergentOverlay` block from `frontend/vite.config.ts`, then run `yarn install` again.
+> The two Emergent-only editor add-ons have been removed from the frontend dependencies
+> and Vite configuration. They are not needed to run or build the application.
+> See `README.md` for the local Windows setup, including standalone MongoDB.
 
 If everything works on the laptop, continue.
 
