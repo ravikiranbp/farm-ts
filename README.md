@@ -35,7 +35,7 @@ Backend, from the repository root:
 ```powershell
 py -3.12 -m venv backend\.venv
 $env:PIP_USER = 'false'
-& .\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+& .\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
 cd backend
 & .\.venv\Scripts\python.exe seed.py
 & .\.venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8001 --reload
@@ -97,7 +97,8 @@ origin).
 
 FastAPI, async throughout. `python` is the app venv interpreter
 (`/root/.venv/bin/python`); backend deps are pip-installed from
-`backend/requirements.txt`.
+`backend/requirements.txt` (runtime, used by the Docker image) and
+`backend/requirements-dev.txt` (runtime + test/lint tools, for local work).
 
 - **Entry point**: `backend/server.py` — creates `app = FastAPI()`, creates
   `api_router = APIRouter(prefix="/api")`, registers routes **on the router**,

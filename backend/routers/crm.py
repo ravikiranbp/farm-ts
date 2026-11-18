@@ -4,17 +4,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 
 from lib.auth import MGMT, current_user, is_mgmt, require
 from lib.common import audit, iso_now, new_id, next_ref, notify
 from lib.db import db
+from lib.files import file_response, store_file
 from routers.leads import get_scoped_lead
 from routers.public import create_service_request
 
 router = APIRouter()
-UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
 ALLOWED = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
 		   ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
@@ -202,14 +200,12 @@ async def upload(file: UploadFile = File(...), entity_type: str = Form(...), ent
 	if public and user["role"] != "admin":
 		raise HTTPException(403, "Only admins can publish public files")
 	fid = new_id()
-	path = UPLOAD_DIR / f"{fid}{ext}"
-	path.write_bytes(data)
-	doc = {"id": fid, "name": Path(file.filename).name, "content_type": ALLOWED[ext], "size": len(data), "path": str(path),
+	await store_file(fid, data, ALLOWED[ext])
+	doc = {"id": fid, "name": Path(file.filename).name, "content_type": ALLOWED[ext], "size": len(data),
 		   "entity_type": entity_type, "entity_id": entity_id, "public": public, "uploaded_by": user["name"], "at": iso_now()}
 	await db.files.insert_one(dict(doc))
 	await audit(user, "file_uploaded", entity_type, record_id=entity_id, new={"file": doc["name"]},
 				lead_id=entity_id if entity_type == "lead" else None)
-	doc.pop("path")
 	return doc
 
 
@@ -227,7 +223,7 @@ async def get_file(fid: str, user: dict = Depends(current_user)):
 		raise HTTPException(404, "File not found")
 	if f["entity_type"] == "lead":
 		await get_scoped_lead(f["entity_id"], user)
-	return FileResponse(f["path"], filename=f["name"], media_type=f["content_type"])
+	return await file_response(f)
 
 
 # ---------------- Notifications (+ lightweight reminder sweep, no cron infra needed) ----------------

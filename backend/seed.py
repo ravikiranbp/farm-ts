@@ -2,11 +2,11 @@
 Run: cd /app/backend && python seed.py
 """
 import asyncio
-from pathlib import Path
 
 from lib.auth import hash_pw
 from lib.common import DEFAULT_SETTINGS, get_settings, iso_now, new_id
 from lib.db import db, ensure_indexes
+from lib.files import store_file, upload_local_files_to_gcs
 from lib.pdf import brochure_pdf
 from routers.leads import create_lead
 
@@ -121,15 +121,13 @@ async def main():
 		await db.services.insert_many([{"id": new_id(), "title": t, "description": d, "order": i, "published": True} for i, (t, d) in enumerate(SERVICES)])
 	if not await db.brochures.count_documents({}):
 		settings = await get_settings()
-		up = Path(__file__).parent / "uploads"
-		up.mkdir(exist_ok=True)
 		for title, desc, prods in [("V Tech Complete Lift Catalogue", "All lift categories, cabin finishes and options.", PRODUCTS),
 								   ("Home Elevators Brochure", "Lifts for villas and independent houses.", [PRODUCTS[1], PRODUCTS[5]])]:
 			fid = new_id()
-			path = up / f"{fid}.pdf"
-			path.write_bytes(brochure_pdf(title, prods, settings))
+			pdf = brochure_pdf(title, prods, settings)
+			await store_file(fid, pdf, "application/pdf")
 			await db.files.insert_one({"id": fid, "name": title.replace(" ", "-") + ".pdf", "content_type": "application/pdf",
-									   "size": path.stat().st_size, "path": str(path), "entity_type": "brochure", "entity_id": "",
+									   "size": len(pdf), "entity_type": "brochure", "entity_id": "",
 									   "public": False, "uploaded_by": "seed", "at": iso_now()})
 			await db.brochures.insert_one({"id": new_id(), "title": title, "description": desc, "file_id": fid,
 										   "cover_image": prods[0]["images"][0], "published": True, "created_at": iso_now()})
@@ -138,6 +136,9 @@ async def main():
 			await create_lead({"name": name, "mobile": mob, "city": city, "area": area, "building_type": bt, "requirement": req,
 							   "lift_type": lt, "floors": fl, "lifts_count": 1, "source": src, "is_sample": True,
 							   "additional_requirements": "SAMPLE RECORD for testing"}, enquiry_type="enquiry", actor=None)
+	copied = await upload_local_files_to_gcs()
+	if copied:
+		print(f"copied {copied} file(s) from backend/uploads to Cloud Storage")
 	print("seed complete")
 
 

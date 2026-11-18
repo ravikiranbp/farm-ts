@@ -1,9 +1,9 @@
 """Public website: content, enquiries (enquiry/callback/inspection/brochure), service requests."""
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
 
 from lib.common import audit, get_settings, iso_now, new_id, next_ref, notify
 from lib.db import db
+from lib.files import file_response
 from models.schemas import EnquiryIn, EnquiryResult, ServiceRequestIn
 from routers.leads import create_lead, upsert_customer
 
@@ -77,7 +77,7 @@ async def download_brochure(dl_id: str):
 	if not f:
 		raise HTTPException(404, "Brochure file is not available yet")
 	await db.brochure_downloads.update_one({"id": dl_id}, {"$inc": {"downloads": 1}})
-	return FileResponse(f["path"], filename=f["name"], media_type=f["content_type"])
+	return await file_response(f)
 
 
 @router.get("/files/{fid}")
@@ -85,7 +85,7 @@ async def public_file(fid: str):
 	f = await db.files.find_one({"id": fid, "public": True})
 	if not f:
 		raise HTTPException(404, "File not found")
-	return FileResponse(f["path"], media_type=f["content_type"])
+	return await file_response(f, download=False)
 
 
 @router.post("/service-requests", response_model=EnquiryResult)

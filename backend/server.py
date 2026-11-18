@@ -41,7 +41,8 @@ for module in (public, auth_users, leads, sales, crm, admin):
 app.add_middleware(
 	CORSMiddleware,
 	allow_credentials=True,
-	allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+	# Unset = no cross-origin access; the site reaches /api same-origin (Nginx or Cloudflare Pages proxy).
+	allow_origins=[o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip() and o.strip() != '*'],
 	allow_methods=["*"],
 	allow_headers=["*"],
 )

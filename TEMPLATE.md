@@ -44,12 +44,10 @@ filename and `quality` is JPEG-only; `page.goto` needs an absolute
 - **Frontend charts**: `recharts` (with `react-is` pinned to the React 19 line). `<Tooltip formatter={(value: number,
   name: string) => …}>` and `labelFormatter={(label: string) => …}` type-check as on recharts 2: the template's
   `recharts` alias (`src/lib/recharts.tsx`) restores Tooltip's generic typing; the raw package is `recharts-upstream`.
-- **Backend** (`backend/requirements.txt`): `fastapi`, `uvicorn`, `motor`,
-  `pymongo`, `pydantic` v2, `python-dotenv`, `httpx`, `requests`, `pandas`,
-  `numpy`, `openpyxl`, `emergentintegrations`, `boto3`, `typer`, `pytest` +
-  `pytest-asyncio`/`xdist`; auth and uploads are covered too — `pyjwt`,
-  `python-jose`, `passlib`, `cryptography`, `email-validator`,
-  `python-multipart`.
+- **Backend** (`backend/requirements.txt`, runtime only): `fastapi`, `uvicorn`, `motor`,
+  `pymongo`, `pydantic` v2, `python-dotenv`, `python-multipart`, `bcrypt`, `tzdata`,
+  `reportlab`, `google-cloud-storage`. `backend/requirements-dev.txt` adds `pytest` +
+  `pytest-asyncio`/`xdist`, `httpx`, `black`, `isort`, `flake8`, `mypy`.
 - **Absent**, install before use: `leaflet`/`@types/leaflet`, any
   other icon pack, any font package outside the §2 manifest.
 

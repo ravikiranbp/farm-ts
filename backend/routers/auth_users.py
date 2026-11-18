@@ -60,12 +60,14 @@ async def me(user: dict = Depends(current_user)):
 
 
 @router.post("/auth/change-password")
-async def change_password(body: PasswordIn, user: dict = Depends(current_user)):
+async def change_password(body: PasswordIn, request: Request, user: dict = Depends(current_user)):
 	full = await db.users.find_one({"id": user["id"]})
 	if not body.current_password or not check_pw(body.current_password, full["password_hash"]):
 		raise HTTPException(400, "Current password is incorrect")
 	await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_pw(body.new_password)}})
-	await audit(user, "password_changed", "users", record_id=user["id"])
+	ended = await db.sessions.delete_many({"user_id": user["id"], "token": {"$ne": request.cookies.get(COOKIE)}})
+	await audit(user, "password_changed", "users", record_id=user["id"],
+				comment=f"Signed out {ended.deleted_count} other session(s)" if ended.deleted_count else None)
 	return {"ok": True}
 
 

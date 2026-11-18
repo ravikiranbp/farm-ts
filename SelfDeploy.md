@@ -3,6 +3,10 @@
 This guide takes you from "I only have a laptop" to "the website and staff CRM are live on my own domain with HTTPS",
 using free or low-cost services only. No Emergent or third-party help is required.
 
+> **Two ways to deploy:** Parts C–G put everything on one VPS (Nginx + MongoDB on the same server).
+> **PART I** deploys to managed free tiers instead: Cloudflare Pages (website) + Google Cloud Run (API) +
+> MongoDB Atlas M0 (database). Parts A–B (laptop setup) apply to both.
+
 ---
 
 ## 0. What you are deploying (read once)
@@ -12,7 +16,7 @@ using free or low-cost services only. No Emergent or third-party help is require
 | Public website + staff CRM screens | React 19 + Vite (TypeScript) | `frontend/` | Built into static files (`frontend/dist`) served by Nginx |
 | API / business logic / PDFs | Python 3.11+ FastAPI (uvicorn) | `backend/` | Port **8001** (only reachable from the same machine) |
 | Database | MongoDB Community (free) | — | Port **27017** (only reachable from the same machine) |
-| Uploaded files, brochure PDFs | Plain folder | `backend/uploads/` | Server disk |
+| Uploaded files, brochure PDFs | Plain folder (VPS) — or Google Cloud Storage bucket (PART I) | `backend/uploads/` | Server disk / bucket |
 
 How a request flows on the live server:
 
@@ -73,8 +77,8 @@ The preview database does **not** come with the code.
 1. Open the preview site, log in as **Admin**.
 2. Go to the Admin **Backup** section → **Download backup**. You get a file like `vtech-backup-20261117-1200.json`.
 3. Keep this file safe — it contains customer data. You will restore it later (step 7).
-4. Uploaded files (photos/documents attached to leads) live in `backend/uploads/` and will come with the code
-   if they are in your GitHub push; otherwise re-upload important ones.
+4. Uploaded files (photos/documents attached to leads) live in `backend/uploads/` (or in the Cloud Storage
+   bucket, PART I) and are **not** inside the JSON backup. Copy that folder/bucket too, or re-upload important ones.
 
 ### A3. Push the code to your GitHub
 
@@ -109,7 +113,7 @@ python -m venv venv
 # Windows:  venv\Scripts\activate
 # mac/Linux: source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 Create/confirm `backend/.env`:
@@ -322,7 +326,6 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-mkdir -p uploads
 ```
 
 Create `/home/vtech/app/backend/.env` (`nano .env`):
@@ -488,7 +491,7 @@ Now `https://vtechelevators.in` works and http redirects to https.
 
 ### 9. Automatic daily backups (free)
 
-Back up both the **database** and the **uploads folder**. As user `vtech`:
+Back up the **database** (it also holds uploaded files and brochure PDFs). As user `vtech`:
 
 ```bash
 mkdir -p /home/vtech/backups
@@ -521,7 +524,8 @@ crontab -e
 scp -r vtech@203.0.113.10:/home/vtech/backups ./vtech-backups
 ```
 
-Also download the in-app JSON backup from the Admin panel from time to time.
+Also download the in-app JSON backup from the Admin panel from time to time (it does not contain uploaded
+files — the `uploads.tar.gz` above does).
 
 **Restore from a mongodump** (disaster recovery):
 
@@ -592,6 +596,149 @@ Database `vtech` (MongoDB on your server). Main collections:
 `brochure_downloads`, `audit_logs`, `users` (staff, passwords stored only as bcrypt hashes),
 `sessions`, `login_history`, `notifications`, `settings`, plus website content
 (`products`, `projects`, `services`, `faqs`, `testimonials`, `brochures`).
-Files: `/home/vtech/app/backend/uploads/`.
+Files: `files` collection holds only name/type/owner; the contents are in `/home/vtech/app/backend/uploads/`
+(VPS) or in the Cloud Storage bucket under `files/<id>` (PART I).
 
 Nothing is sent to any outside service — there is no paid SMS, WhatsApp, email or analytics integration.
+
+---
+
+## PART I — Managed free tiers: Cloudflare Pages + Google Cloud Run + MongoDB Atlas M0
+
+Use this instead of Parts C–G if you do not want to manage a server.
+
+```
+Browser ──HTTPS──> Cloudflare Pages  (your domain)
+                    ├── /          → static files from frontend/dist
+                    └── /api/...   → Pages Function frontend/functions/api/[[path]].ts
+                                       └── forwards to Google Cloud Run (FastAPI)
+                                              └── MongoDB Atlas M0
+```
+
+The browser only ever talks to the Cloudflare domain, so the login cookie, PDF/CSV download links and
+share links work exactly as on a single server — no CORS setup is needed in the browser.
+
+### I1. MongoDB Atlas (free M0)
+
+1. Sign up at https://www.mongodb.com/cloud/atlas → **Create** → **M0 Free**, provider **Google Cloud**,
+   region **Mumbai (asia-south1)** (same region as Cloud Run keeps it fast).
+2. **Database Access** → Add database user (e.g. `vtechapp`, password with letters and numbers only),
+   role *Read and write to any database*.
+3. **Network Access** → Add IP Address → `0.0.0.0/0` (Cloud Run has no fixed outgoing IP on the free setup;
+   the strong DB password is the protection).
+4. **Connect** → Drivers → copy the string, e.g.
+   `mongodb+srv://vtechapp:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+   You load the starting data in I2 step 3, after the file bucket exists.
+
+M0 limits: 512 MB storage, no automatic backups — download the in-app JSON backup (Admin → Backup) regularly.
+Atlas stores only records; all uploaded files and brochure PDFs go to Cloud Storage (I2).
+
+### I2. Google Cloud Run (API)
+
+1. Create a project at https://console.cloud.google.com, enable billing (needed even for the free tier),
+   and install the gcloud CLI: https://cloud.google.com/sdk/docs/install. Then `gcloud init`.
+2. Create a **private** Cloud Storage bucket for uploaded files and let Cloud Run use it
+   (bucket names are global — pick a unique one):
+
+```bash
+gcloud storage buckets create gs://vtech-files-<unique> --location=asia-south1 \
+  --uniform-bucket-level-access --public-access-prevention
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format="value(projectNumber)")
+gcloud storage buckets add-iam-policy-binding gs://vtech-files-<unique> \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" --role=roles/storage.objectAdmin
+```
+
+   - Keep it private: files include customer documents; the app streams them only to authorised users.
+   - Cost: a few MB/GB in `asia-south1` costs cents per month. The 5 GB "Always Free" storage applies only to
+     `us-central1`, `us-east1`, `us-west1` (slower from India, but free).
+   - Cloud Run refuses to start without `GCS_BUCKET`, so files can never silently land on its temporary disk.
+
+3. Load starting data from your laptop (staff accounts, website content, brochure PDFs):
+
+```bash
+gcloud auth application-default login      # lets your laptop write to the bucket
+```
+
+   In `backend/.env` set `MONGO_URL="<Atlas string from I1>"`, `DB_NAME="vtech"`, `GCS_BUCKET="vtech-files-<unique>"`,
+   then run `python seed.py` (see B2). It also copies any files already in `backend/uploads/` to the bucket
+   (safe to re-run). Then follow step 8 to change the seeded passwords.
+   Remove `GCS_BUCKET` from your laptop `.env` afterwards if you want local testing to use `backend/uploads/` again.
+
+4. Deploy from the repository root:
+
+```bash
+gcloud run deploy vtech-api --source backend --region asia-south1 --allow-unauthenticated \
+  --set-env-vars "DB_NAME=vtech,APP_TZ=Asia/Kolkata,GCS_BUCKET=vtech-files-<unique>,MONGO_URL=mongodb+srv://vtechapp:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority"
+```
+
+   - `CORS_ORIGINS` is **not needed** here: the browser reaches `/api` through the Cloudflare Function on the
+     same domain. When unset, the API allows no cross-origin browser access (`*` is ignored on purpose).
+     Set it only if a *different* website must call the API directly from the browser.
+   - `--allow-unauthenticated` is required: the Cloudflare Function calls Cloud Run as a public URL.
+     Staff data is still protected by the app's own login.
+   - Optional, safer: store `MONGO_URL` in **Secret Manager** and use `--set-secrets MONGO_URL=mongo-url:latest`
+     instead of putting the password on the command line.
+   - `--min-instances 0` (default) stays free but the first request after idle takes a few seconds;
+     `--min-instances 1` removes that delay but is billed.
+5. Note the service URL printed at the end, e.g. `https://vtech-api-xxxxxxxx-el.a.run.app`.
+6. Test: open `https://vtech-api-xxxxxxxx-el.a.run.app/api/` → `{"message":"V Tech Elevators API"}`.
+
+> `--source backend` builds the container from `backend/Dockerfile` with Cloud Build (first deploy asks to
+> enable the Cloud Build / Artifact Registry APIs — answer **y**). `backend/.gcloudignore` keeps `.env`,
+> `.venv` and `uploads/` out of the upload.
+
+### I3. Cloudflare Pages (website)
+
+1. https://dash.cloudflare.com → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** →
+   choose your GitHub repository.
+2. Build settings:
+
+| Setting | Value |
+|---|---|
+| Framework preset | None (or Vite) |
+| Root directory | `frontend` |
+| Build command | `yarn build` |
+| Build output directory | `dist` |
+
+3. **Settings → Environment variables** (add for both *Production* and *Preview*):
+
+| Name | Value |
+|---|---|
+| `API_ORIGIN` | your Cloud Run URL from I2, e.g. `https://vtech-api-xxxxxxxx-el.a.run.app` — **no trailing slash** |
+| `NODE_VERSION` | `22` |
+
+4. Save and **Retry deployment** (environment variable changes only apply to new deployments).
+5. Test: `https://<project>.pages.dev/api/` → `{"message":"V Tech Elevators API"}`.
+
+### I4. Your own domain
+
+1. Pages project → **Custom domains** → add `vtechelevators.in` (and `www`). Easiest if the domain's DNS is
+   on Cloudflare (free plan); otherwise follow the CNAME instructions shown.
+   No backend change is needed — the Function proxies `/api` for every domain attached to the project.
+
+### I5. Check it works
+
+- [ ] `https://vtechelevators.in/api/` returns the API message.
+- [ ] Public site loads; submitting an enquiry shows a reference number.
+- [ ] `/login` → staff login works and stays logged in after a page refresh.
+- [ ] Opening `https://vtechelevators.in/staff/leads` directly (refresh) loads the page, not a 404.
+- [ ] A quotation **PDF** download and a CSV export work.
+- [ ] Then complete the security checklist in step 8.
+
+### I6. Updating later
+
+- Website: `git push` → Cloudflare Pages rebuilds automatically.
+- API: run the same `gcloud run deploy ...` command from I2 again (env vars are kept; you may drop the
+  `--set-env-vars` flags).
+
+### I7. Troubleshooting
+
+| Symptom | Check / fix |
+|---|---|
+| `/api/...` returns "API_ORIGIN is not configured" | Add `API_ORIGIN` in Pages settings, then redeploy |
+| `/api/...` returns 403 from Google | Cloud Run is not public: `gcloud run services add-iam-policy-binding vtech-api --region asia-south1 --member=allUsers --role=roles/run.invoker` |
+| `/api/...` returns 404 | `API_ORIGIN` has a trailing slash or a path — use only `https://host` |
+| API log `ServerSelectionTimeoutError` | Atlas Network Access missing `0.0.0.0/0`, or wrong password in `MONGO_URL` |
+| API log `KeyError: 'MONGO_URL'` | Env var not set on Cloud Run (`gcloud run services describe vtech-api --region asia-south1`) |
+| Upload fails / API log `403 ... storage.objects` | The bucket IAM binding in I2 step 2 is missing, or `GCS_BUCKET` has a typo (name only, no `gs://`) |
+| Logs: Cloud Run → vtech-api → **Logs**; Pages → deployment → **Functions** tab | |
