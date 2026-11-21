@@ -15,5 +15,5 @@ COPY . .
 RUN useradd --create-home --uid 10001 app
 USER app
 
-# Cloud Run injects PORT (8080 by default).
-CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Render / Cloud Run inject PORT.
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080} --no-server-header"]

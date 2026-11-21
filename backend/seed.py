@@ -6,7 +6,7 @@ import asyncio
 from lib.auth import hash_pw
 from lib.common import DEFAULT_SETTINGS, get_settings, iso_now, new_id
 from lib.db import db, ensure_indexes
-from lib.files import store_file, upload_local_files_to_gcs
+from lib.files import store_file, upload_local_files_to_storage
 from lib.pdf import brochure_pdf
 from routers.leads import create_lead
 
@@ -136,9 +136,9 @@ async def main():
 			await create_lead({"name": name, "mobile": mob, "city": city, "area": area, "building_type": bt, "requirement": req,
 							   "lift_type": lt, "floors": fl, "lifts_count": 1, "source": src, "is_sample": True,
 							   "additional_requirements": "SAMPLE RECORD for testing"}, enquiry_type="enquiry", actor=None)
-	copied = await upload_local_files_to_gcs()
+	copied = await upload_local_files_to_storage()
 	if copied:
-		print(f"copied {copied} file(s) from backend/uploads to Cloud Storage")
+		print(f"copied {copied} file(s) from backend/uploads to Supabase Storage")
 	print("seed complete")
 
 

@@ -4,8 +4,8 @@ This guide takes you from "I only have a laptop" to "the website and staff CRM a
 using free or low-cost services only. No Emergent or third-party help is required.
 
 > **Two ways to deploy:** Parts C–G put everything on one VPS (Nginx + MongoDB on the same server).
-> **PART I** deploys to managed free tiers instead: Cloudflare Pages (website) + Google Cloud Run (API) +
-> MongoDB Atlas M0 (database). Parts A–B (laptop setup) apply to both.
+> **PART I** deploys to free managed services instead: Cloudflare Pages (website) + Render (API) +
+> Supabase Storage (files) + MongoDB Atlas M0 (database). No card needed. Parts A–B (laptop setup) apply to both.
 
 ---
 
@@ -16,7 +16,7 @@ using free or low-cost services only. No Emergent or third-party help is require
 | Public website + staff CRM screens | React 19 + Vite (TypeScript) | `frontend/` | Built into static files (`frontend/dist`) served by Nginx |
 | API / business logic / PDFs | Python 3.11+ FastAPI (uvicorn) | `backend/` | Port **8001** (only reachable from the same machine) |
 | Database | MongoDB Community (free) | — | Port **27017** (only reachable from the same machine) |
-| Uploaded files, brochure PDFs | Plain folder (VPS) — or Google Cloud Storage bucket (PART I) | `backend/uploads/` | Server disk / bucket |
+| Uploaded files, brochure PDFs | Plain folder (VPS) — or Supabase Storage bucket (PART I) | `backend/uploads/` | Server disk / bucket |
 
 How a request flows on the live server:
 
@@ -77,7 +77,7 @@ The preview database does **not** come with the code.
 1. Open the preview site, log in as **Admin**.
 2. Go to the Admin **Backup** section → **Download backup**. You get a file like `vtech-backup-20261117-1200.json`.
 3. Keep this file safe — it contains customer data. You will restore it later (step 7).
-4. Uploaded files (photos/documents attached to leads) live in `backend/uploads/` (or in the Cloud Storage
+4. Uploaded files (photos/documents attached to leads) live in `backend/uploads/` (or in the Supabase Storage
    bucket, PART I) and are **not** inside the JSON backup. Copy that folder/bucket too, or re-upload important ones.
 
 ### A3. Push the code to your GitHub
@@ -597,97 +597,124 @@ Database `vtech` (MongoDB on your server). Main collections:
 `sessions`, `login_history`, `notifications`, `settings`, plus website content
 (`products`, `projects`, `services`, `faqs`, `testimonials`, `brochures`).
 Files: `files` collection holds only name/type/owner; the contents are in `/home/vtech/app/backend/uploads/`
-(VPS) or in the Cloud Storage bucket under `files/<id>` (PART I).
+(VPS) or in the Supabase Storage bucket `files`, one object per file id (PART I).
 
 Nothing is sent to any outside service — there is no paid SMS, WhatsApp, email or analytics integration.
 
 ---
 
-## PART I — Managed free tiers: Cloudflare Pages + Google Cloud Run + MongoDB Atlas M0
+## PART I — Free managed services: Cloudflare Pages + Render + Supabase Storage + MongoDB Atlas M0
 
-Use this instead of Parts C–G if you do not want to manage a server.
+Use this instead of Parts C–G if you do not want to manage a server. None of these services needs a card.
 
 ```
 Browser ──HTTPS──> Cloudflare Pages  (your domain)
                     ├── /          → static files from frontend/dist
                     └── /api/...   → Pages Function frontend/functions/api/[[path]].ts
-                                       └── forwards to Google Cloud Run (FastAPI)
-                                              └── MongoDB Atlas M0
+                                       └── forwards (with PROXY_SECRET) to Render (FastAPI, Docker)
+                                              ├── MongoDB Atlas M0       (records)
+                                              └── Supabase Storage       (uploaded files, brochure PDFs)
 ```
 
-The browser only ever talks to the Cloudflare domain, so the login cookie, PDF/CSV download links and
-share links work exactly as on a single server — no CORS setup is needed in the browser.
+The browser only ever talks to your Cloudflare domain:
+- The Render address (`*.onrender.com`), database and Supabase details never reach the browser — not in the
+  page code, not in the Network tab, not in response headers (the Function strips hosting headers).
+- The Render address rejects any request that did not come through the Function (it returns 404 without the
+  shared `PROXY_SECRET`), so nobody can bypass your site and call the API directly.
+- API documentation pages (`/docs`, `/openapi.json`) are off unless `API_DOCS=1` is set.
+- What the Network tab *does* show is your own site's `/api/...` calls and the data the logged-in user is
+  allowed to see — that is how any web app works; role checks on the server decide what each user gets.
 
 ### I1. MongoDB Atlas (free M0)
 
-1. Sign up at https://www.mongodb.com/cloud/atlas → **Create** → **M0 Free**, provider **Google Cloud**,
-   region **Mumbai (asia-south1)** (same region as Cloud Run keeps it fast).
-2. **Database Access** → Add database user (e.g. `vtechapp`, password with letters and numbers only),
-   role *Read and write to any database*.
-3. **Network Access** → Add IP Address → `0.0.0.0/0` (Cloud Run has no fixed outgoing IP on the free setup;
+1. Sign up at https://www.mongodb.com/cloud/atlas → **Create** → **M0 Free**, region **Mumbai**
+   (untick "Load sample dataset").
+2. **Database Access** → database user, password with letters and numbers only, role
+   **readWrite @ `vtech`** (not Atlas admin).
+3. **Network Access** → Add IP Address → `0.0.0.0/0` (Render has no fixed outgoing IP on the free plan;
    the strong DB password is the protection).
-4. **Connect** → Drivers → copy the string, e.g.
-   `mongodb+srv://vtechapp:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
-   You load the starting data in I2 step 3, after the file bucket exists.
+4. **Connect** → Drivers → Python → copy the string, e.g.
+   `mongodb+srv://<user>:<password>@<cluster>.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+   You load the starting data in I3, after the file storage exists.
 
 M0 limits: 512 MB storage, no automatic backups — download the in-app JSON backup (Admin → Backup) regularly.
-Atlas stores only records; all uploaded files and brochure PDFs go to Cloud Storage (I2).
+Atlas stores only records; all uploaded files and brochure PDFs go to Supabase Storage (I2).
 
-### I2. Google Cloud Run (API)
+### I2. Supabase Storage (files)
 
-1. Create a project at https://console.cloud.google.com, enable billing (needed even for the free tier),
-   and install the gcloud CLI: https://cloud.google.com/sdk/docs/install. Then `gcloud init`.
-2. Create a **private** Cloud Storage bucket for uploaded files and let Cloud Run use it
-   (bucket names are global — pick a unique one):
+1. Sign up at https://supabase.com → **New project**: name `vtech`, a strong database password (not used by
+   this app, but keep it), region **Mumbai** (or Singapore), plan **Free**.
+2. **Storage** → **New bucket** → name `files`, **Public bucket: OFF** (files include customer documents;
+   the app streams them only to authorised users).
+3. **Project Settings → API Keys** (or **Data API**): copy
+   - **Project URL** → e.g. `https://abcdefgh.supabase.co` → this is `SUPABASE_URL`
+   - the **secret** key (`sb_secret_...`) — or on older projects the **service_role** key (`eyJ...`) →
+     this is `SUPABASE_SERVICE_KEY`. **Never** put it in frontend code or share it; it bypasses all bucket rules.
 
-```bash
-gcloud storage buckets create gs://vtech-files-<unique> --location=asia-south1 \
-  --uniform-bucket-level-access --public-access-prevention
-PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format="value(projectNumber)")
-gcloud storage buckets add-iam-policy-binding gs://vtech-files-<unique> \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" --role=roles/storage.objectAdmin
+Free plan: about 1 GB of files. Free projects **pause after ~7 days without activity** — the keep-alive job
+in I6 prevents that. If it ever pauses, open the Supabase dashboard and click **Restore**.
+
+### I3. Load starting data (from your laptop)
+
+In `backend/.env` (never committed) set:
+
+```
+MONGO_URL="<Atlas string from I1, with your password>"
+DB_NAME="vtech"
+SUPABASE_URL="https://abcdefgh.supabase.co"
+SUPABASE_SERVICE_KEY="<secret key from I2>"
+SUPABASE_BUCKET="files"
 ```
 
-   - Keep it private: files include customer documents; the app streams them only to authorised users.
-   - Cost: a few MB/GB in `asia-south1` costs cents per month. The 5 GB "Always Free" storage applies only to
-     `us-central1`, `us-east1`, `us-west1` (slower from India, but free).
-   - Cloud Run refuses to start without `GCS_BUCKET`, so files can never silently land on its temporary disk.
+Then `python seed.py` (see B2). It creates staff accounts, website content and brochure PDFs (uploaded to
+Supabase), and copies any files already in `backend/uploads/` to Supabase (safe to re-run).
+Then follow step 8 to change the seeded passwords. To go back to purely local testing, switch `MONGO_URL` back to
+`mongodb://127.0.0.1:27017` and remove the three `SUPABASE_` lines.
 
-3. Load starting data from your laptop (staff accounts, website content, brochure PDFs):
-
-```bash
-gcloud auth application-default login      # lets your laptop write to the bucket
-```
-
-   In `backend/.env` set `MONGO_URL="<Atlas string from I1>"`, `DB_NAME="vtech"`, `GCS_BUCKET="vtech-files-<unique>"`,
-   then run `python seed.py` (see B2). It also copies any files already in `backend/uploads/` to the bucket
-   (safe to re-run). Then follow step 8 to change the seeded passwords.
-   Remove `GCS_BUCKET` from your laptop `.env` afterwards if you want local testing to use `backend/uploads/` again.
-
-4. Deploy from the repository root:
+Create the shared proxy secret now (used in I4 and I5) and keep it in your password manager:
 
 ```bash
-gcloud run deploy vtech-api --source backend --region asia-south1 --allow-unauthenticated \
-  --set-env-vars "DB_NAME=vtech,APP_TZ=Asia/Kolkata,GCS_BUCKET=vtech-files-<unique>,MONGO_URL=mongodb+srv://vtechapp:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority"
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-   - `CORS_ORIGINS` is **not needed** here: the browser reaches `/api` through the Cloudflare Function on the
-     same domain. When unset, the API allows no cross-origin browser access (`*` is ignored on purpose).
-     Set it only if a *different* website must call the API directly from the browser.
-   - `--allow-unauthenticated` is required: the Cloudflare Function calls Cloud Run as a public URL.
-     Staff data is still protected by the app's own login.
-   - Optional, safer: store `MONGO_URL` in **Secret Manager** and use `--set-secrets MONGO_URL=mongo-url:latest`
-     instead of putting the password on the command line.
-   - `--min-instances 0` (default) stays free but the first request after idle takes a few seconds;
-     `--min-instances 1` removes that delay but is billed.
-5. Note the service URL printed at the end, e.g. `https://vtech-api-xxxxxxxx-el.a.run.app`.
-6. Test: open `https://vtech-api-xxxxxxxx-el.a.run.app/api/` → `{"message":"V Tech Elevators API"}`.
+### I4. Render (API)
 
-> `--source backend` builds the container from `backend/Dockerfile` with Cloud Build (first deploy asks to
-> enable the Cloud Build / Artifact Registry APIs — answer **y**). `backend/.gcloudignore` keeps `.env`,
-> `.venv` and `uploads/` out of the upload.
+1. Sign up at https://render.com with your GitHub account.
+2. **New → Web Service** → connect your GitHub repository.
 
-### I3. Cloudflare Pages (website)
+| Setting | Value |
+|---|---|
+| Name | `vtech-api` (becomes `https://vtech-api.onrender.com` — only the Cloudflare Function uses it) |
+| Region | **Singapore** (closest to India) |
+| Branch | `main` |
+| Root Directory | `backend` |
+| Language / Runtime | **Docker** (uses `backend/Dockerfile`) |
+| Instance Type | **Free** |
+
+3. **Environment Variables** (Add from .env, or one by one):
+
+| Key | Value |
+|---|---|
+| `MONGO_URL` | Atlas string from I1 (with password) |
+| `DB_NAME` | `vtech` |
+| `APP_TZ` | `Asia/Kolkata` |
+| `SUPABASE_URL` | from I2 |
+| `SUPABASE_SERVICE_KEY` | from I2 |
+| `SUPABASE_BUCKET` | `files` |
+| `PROXY_SECRET` | the value you generated in I3 |
+
+   - Do **not** set `CORS_ORIGINS` or `API_DOCS` (the site reaches `/api` through the Function on the same domain).
+   - The app refuses to start on Render without the Supabase settings, so files can never land on Render's
+     temporary disk (it is wiped on every restart/deploy).
+4. **Advanced → Health Check Path**: `/api/` (the only path that answers without the proxy secret).
+5. **Create Web Service**. The first build takes a few minutes. Note the URL, e.g. `https://vtech-api.onrender.com`.
+6. Test: `https://vtech-api.onrender.com/api/` → `{"message":"V Tech Elevators API"}`, and
+   `https://vtech-api.onrender.com/api/public/content` → `{"detail":"Not Found"}` (blocked without the secret — correct).
+
+Free plan: sleeps after ~15 minutes without traffic (the first request then waits ~30–60 s) — the keep-alive job
+in I6 prevents that. ~750 free hours/month covers one service running all month.
+
+### I5. Cloudflare Pages (website)
 
 1. https://dash.cloudflare.com → **Workers & Pages** → **Create** → **Pages** → **Connect to Git** →
    choose your GitHub repository.
@@ -700,45 +727,66 @@ gcloud run deploy vtech-api --source backend --region asia-south1 --allow-unauth
 | Build command | `yarn build` |
 | Build output directory | `dist` |
 
-3. **Settings → Environment variables** (add for both *Production* and *Preview*):
+3. **Settings → Variables and Secrets** (add for both *Production* and *Preview*):
 
-| Name | Value |
-|---|---|
-| `API_ORIGIN` | your Cloud Run URL from I2, e.g. `https://vtech-api-xxxxxxxx-el.a.run.app` — **no trailing slash** |
-| `NODE_VERSION` | `22` |
+| Name | Type | Value |
+|---|---|---|
+| `API_ORIGIN` | Text | your Render URL from I4, e.g. `https://vtech-api.onrender.com` — **no trailing slash** |
+| `PROXY_SECRET` | **Secret** (encrypted) | the same value you put on Render |
+| `NODE_VERSION` | Text | `22` |
 
-4. Save and **Retry deployment** (environment variable changes only apply to new deployments).
+   These are read only by the Function on Cloudflare's servers; none of them is sent to the browser.
+4. Save and **Retry deployment** (variable changes only apply to new deployments).
 5. Test: `https://<project>.pages.dev/api/` → `{"message":"V Tech Elevators API"}`.
 
-### I4. Your own domain
+### I6. Keep-alive jobs (free, no card)
+
+Use https://cron-job.org (free account). Both jobs call **your Cloudflare site**, never the Render address, so
+they pass through the Function like normal visitors.
+
+| Job | URL | Schedule | Why |
+|---|---|---|---|
+| Keep API awake | `https://<your-site>/api/` | every **14 minutes** | Render sleeps after 15 min without traffic |
+| Keep storage active | `https://<your-site>/api/health/storage` | days **1, 6, 11, 16, 21, 26** of the month, 03:00 | Supabase pauses free projects after ~7 days idle; this makes a real storage call |
+
+- Method `GET`, no headers or body needed. Enable "notify on failure" so you get an email if a job fails.
+- `/api/health/storage` should return `{"ok":true}`; `{"ok":false}` means the Supabase settings on Render are wrong
+  or the project is paused.
+- One service awake all month uses ~744 of Render's ~750 free hours — don't add a second always-on service.
+
+### I7. Your own domain (optional)
 
 1. Pages project → **Custom domains** → add `vtechelevators.in` (and `www`). Easiest if the domain's DNS is
    on Cloudflare (free plan); otherwise follow the CNAME instructions shown.
    No backend change is needed — the Function proxies `/api` for every domain attached to the project.
 
-### I5. Check it works
+### I8. Check it works
 
-- [ ] `https://vtechelevators.in/api/` returns the API message.
-- [ ] Public site loads; submitting an enquiry shows a reference number.
+- [ ] `https://<your-site>/api/` returns the API message.
+- [ ] `https://<your-site>/api/health/storage` returns `{"ok":true}`.
+- [ ] `https://vtech-api.onrender.com/api/public/content` returns `{"detail":"Not Found"}` (direct access blocked).
+- [ ] Public site loads; submitting an enquiry shows a reference number; a brochure downloads.
 - [ ] `/login` → staff login works and stays logged in after a page refresh.
-- [ ] Opening `https://vtechelevators.in/staff/leads` directly (refresh) loads the page, not a 404.
+- [ ] Opening `https://<your-site>/staff/leads` directly (refresh) loads the page, not a 404.
+- [ ] Upload a file on a lead → it appears in Supabase → Storage → `files`, and downloads in the app.
 - [ ] A quotation **PDF** download and a CSV export work.
+- [ ] Browser DevTools → Network: no request or response header mentions `onrender.com` or `supabase.co`.
 - [ ] Then complete the security checklist in step 8.
 
-### I6. Updating later
+### I9. Updating later
 
-- Website: `git push` → Cloudflare Pages rebuilds automatically.
-- API: run the same `gcloud run deploy ...` command from I2 again (env vars are kept; you may drop the
-  `--set-env-vars` flags).
+- `git push` to `main` → Cloudflare Pages rebuilds the website and Render rebuilds the API automatically.
 
-### I7. Troubleshooting
+### I10. Troubleshooting
 
 | Symptom | Check / fix |
 |---|---|
-| `/api/...` returns "API_ORIGIN is not configured" | Add `API_ORIGIN` in Pages settings, then redeploy |
-| `/api/...` returns 403 from Google | Cloud Run is not public: `gcloud run services add-iam-policy-binding vtech-api --region asia-south1 --member=allUsers --role=roles/run.invoker` |
-| `/api/...` returns 404 | `API_ORIGIN` has a trailing slash or a path — use only `https://host` |
+| `/api/...` returns "Service is not configured" | `API_ORIGIN` or `PROXY_SECRET` missing in Pages settings → add, then **Retry deployment** |
+| Every `/api/...` call returns `{"detail":"Not Found"}` but `/api/` works | `PROXY_SECRET` differs between Render and Cloudflare (copy it again, no spaces) |
+| `/api/...` very slow the first time | Render was asleep; check the I6 keep-alive job is running |
+| Render deploy fails with `SUPABASE_URL and SUPABASE_SERVICE_KEY must be set` | Add both on Render → Environment |
+| Upload fails "Could not store the file" | Render logs show the Supabase reply: bucket name wrong, wrong key (must be secret/service_role, not anon/publishable), or project paused |
+| `/api/health/storage` returns `{"ok":false}` | Same as above |
 | API log `ServerSelectionTimeoutError` | Atlas Network Access missing `0.0.0.0/0`, or wrong password in `MONGO_URL` |
-| API log `KeyError: 'MONGO_URL'` | Env var not set on Cloud Run (`gcloud run services describe vtech-api --region asia-south1`) |
-| Upload fails / API log `403 ... storage.objects` | The bucket IAM binding in I2 step 2 is missing, or `GCS_BUCKET` has a typo (name only, no `gs://`) |
-| Logs: Cloud Run → vtech-api → **Logs**; Pages → deployment → **Functions** tab | |
+| API log `KeyError: 'MONGO_URL'` | Env var not set on Render |
+| Logs: Render → vtech-api → **Logs**; Pages → deployment → **Functions** tab | |

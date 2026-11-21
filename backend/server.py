@@ -1,6 +1,8 @@
 import asyncio
+import secrets
 from contextlib import asynccontextmanager, suppress
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -13,6 +15,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 from lib.db import client, db, ensure_indexes  # noqa: E402
+from lib.files import storage_ping  # noqa: E402
 from routers import admin, auth_users, crm, leads, public, sales  # noqa: E402
 
 
@@ -26,13 +29,30 @@ async def lifespan(app: FastAPI):
 	client.close()
 
 
-app = FastAPI(lifespan=lifespan, title="V Tech Elevators API")
+_docs = os.environ.get("API_DOCS", "").lower() in ("1", "true", "yes")
+app = FastAPI(lifespan=lifespan, title="V Tech Elevators API",
+			  docs_url="/docs" if _docs else None, redoc_url=None, openapi_url="/openapi.json" if _docs else None)
 api_router = APIRouter(prefix="/api")
+PROXY_SECRET = os.environ.get("PROXY_SECRET", "").strip()
+
+
+@app.middleware("http")
+async def require_proxy(request: Request, call_next):
+	# When set, only the Cloudflare proxy (which adds this header) may call the API; /api/ stays open for host health checks.
+	if PROXY_SECRET and request.url.path != "/api/" and not secrets.compare_digest(
+			request.headers.get("x-proxy-secret", "").encode(), PROXY_SECRET.encode()):
+		return JSONResponse({"detail": "Not Found"}, status_code=404)
+	return await call_next(request)
 
 
 @api_router.get("/")
 async def root():
 	return {"message": "V Tech Elevators API"}
+
+
+@api_router.get("/health/storage")
+async def storage_health():
+	return {"ok": await storage_ping()}
 
 
 for module in (public, auth_users, leads, sales, crm, admin):

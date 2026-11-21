@@ -1,31 +1,37 @@
-"""Uploaded file contents: Google Cloud Storage when GCS_BUCKET is set (required on Cloud Run), else backend/uploads/
-(local dev / single VPS). MongoDB holds only the metadata in `files`."""
+"""Uploaded file contents: Supabase Storage when SUPABASE_URL/SUPABASE_SERVICE_KEY are set (required on Render),
+else backend/uploads/ (local dev / single VPS). MongoDB holds only the metadata in `files`."""
 import asyncio
 import logging
 import os
 from pathlib import Path
 from urllib.parse import quote
 
+import httpx
 from fastapi import HTTPException
 from fastapi.responses import Response
 
-from lib.db import db  # also loads backend/.env before GCS_BUCKET is read
+from lib.db import db  # also loads backend/.env before the settings below are read
 
-GCS_BUCKET = os.environ.get("GCS_BUCKET", "").strip()
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "files").strip()
+USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
-if os.environ.get("K_SERVICE") and not GCS_BUCKET:  # K_SERVICE is set by Cloud Run
-	raise RuntimeError("GCS_BUCKET must be set on Cloud Run: the container disk is wiped on every restart")
+if (os.environ.get("RENDER") or os.environ.get("K_SERVICE")) and not USE_SUPABASE:  # set by Render / Cloud Run
+	raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set: this host's disk is wiped on every restart")
 
 logger = logging.getLogger(__name__)
-_bucket = None
 
 
-def _gcs_blob(fid: str):
-	global _bucket
-	if _bucket is None:
-		from google.cloud import storage  # lazy: local-disk setups need no GCP credentials
-		_bucket = storage.Client().bucket(GCS_BUCKET)
-	return _bucket.blob(f"files/{fid}")
+def _headers(extra: dict | None = None) -> dict:
+	h = {"apikey": SUPABASE_KEY}
+	if SUPABASE_KEY.startswith("eyJ"):  # legacy service_role JWT; new sb_secret_ keys go in `apikey` only
+		h["Authorization"] = f"Bearer {SUPABASE_KEY}"
+	return h | (extra or {})
+
+
+def _object_url(fid: str) -> str:
+	return f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{fid}"
 
 
 def _local_path(f: dict) -> Path:
@@ -33,21 +39,33 @@ def _local_path(f: dict) -> Path:
 	return UPLOAD_DIR / (Path(f["path"]).name if f.get("path") else f["id"])
 
 
+async def _upload(fid: str, data: bytes, content_type: str, upsert: bool) -> httpx.Response:
+	async with httpx.AsyncClient(timeout=60) as c:
+		return await c.post(_object_url(fid), content=data,
+							headers=_headers({"Content-Type": content_type, "x-upsert": "true" if upsert else "false"}))
+
+
 async def store_file(fid: str, data: bytes, content_type: str) -> None:
-	if GCS_BUCKET:
-		await asyncio.to_thread(_gcs_blob(fid).upload_from_string, data, content_type=content_type)
+	if USE_SUPABASE:
+		r = await _upload(fid, data, content_type, upsert=True)
+		if r.status_code >= 300:
+			logger.error("Supabase upload %s failed (%s): %s", fid, r.status_code, r.text[:300])
+			raise HTTPException(502, "Could not store the file. Please try again.")
 	else:
 		UPLOAD_DIR.mkdir(exist_ok=True)
 		await asyncio.to_thread((UPLOAD_DIR / fid).write_bytes, data)
 
 
 async def _load(f: dict) -> bytes | None:
-	if GCS_BUCKET:
-		from google.api_core.exceptions import NotFound
-		try:
-			return await asyncio.to_thread(_gcs_blob(f["id"]).download_as_bytes)
-		except NotFound:
+	if USE_SUPABASE:
+		async with httpx.AsyncClient(timeout=60) as c:
+			r = await c.get(_object_url(f["id"]), headers=_headers())
+		if r.status_code == 200:
+			return r.content
+		if r.status_code in (400, 404):  # Supabase reports a missing object as 400 {"statusCode":"404"} or 404
 			return None
+		logger.error("Supabase download %s failed (%s): %s", f["id"], r.status_code, r.text[:300])
+		raise HTTPException(502, "Could not load the file. Please try again.")
 	path = _local_path(f)
 	return await asyncio.to_thread(path.read_bytes) if path.is_file() else None
 
@@ -60,16 +78,30 @@ async def file_response(f: dict, download: bool = True) -> Response:
 	return Response(data, media_type=f["content_type"], headers=headers)
 
 
-async def upload_local_files_to_gcs() -> int:
-	"""Copy files present in backend/uploads/ but missing from the bucket. Safe to re-run."""
-	if not GCS_BUCKET:
+async def upload_local_files_to_storage() -> int:
+	"""Copy files present in backend/uploads/ but missing from Supabase. Safe to re-run."""
+	if not USE_SUPABASE:
 		return 0
 	copied = 0
 	async for f in db.files.find({}, {"_id": 0}):
-		path, blob = _local_path(f), _gcs_blob(f["id"])
-		if path.is_file() and not await asyncio.to_thread(blob.exists):
-			await asyncio.to_thread(blob.upload_from_filename, str(path), content_type=f["content_type"])
+		path = _local_path(f)
+		if not path.is_file():
+			continue
+		r = await _upload(f["id"], await asyncio.to_thread(path.read_bytes), f["content_type"], upsert=False)
+		if r.status_code < 300:
 			copied += 1
+		elif "exists" not in r.text.lower() and "duplicate" not in r.text.lower():
+			raise RuntimeError(f"Supabase upload {f['id']} failed ({r.status_code}): {r.text[:300]}")
 	if copied:
-		logger.info("Copied %d local file(s) to gs://%s", copied, GCS_BUCKET)
+		logger.info("Copied %d local file(s) to Supabase bucket %s", copied, SUPABASE_BUCKET)
 	return copied
+
+
+async def storage_ping() -> bool:
+	"""Cheap Supabase call; a scheduled hit keeps the free project from pausing for inactivity."""
+	if not USE_SUPABASE:
+		return False
+	async with httpx.AsyncClient(timeout=30) as c:
+		r = await c.post(f"{SUPABASE_URL}/storage/v1/object/list/{SUPABASE_BUCKET}",
+						 json={"prefix": "", "limit": 1}, headers=_headers())
+	return r.status_code == 200

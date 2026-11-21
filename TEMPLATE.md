@@ -46,7 +46,7 @@ filename and `quality` is JPEG-only; `page.goto` needs an absolute
   `recharts` alias (`src/lib/recharts.tsx`) restores Tooltip's generic typing; the raw package is `recharts-upstream`.
 - **Backend** (`backend/requirements.txt`, runtime only): `fastapi`, `uvicorn`, `motor`,
   `pymongo`, `pydantic` v2, `python-dotenv`, `python-multipart`, `bcrypt`, `tzdata`,
-  `reportlab`, `google-cloud-storage`. `backend/requirements-dev.txt` adds `pytest` +
+  `reportlab`, `httpx` (Supabase Storage). `backend/requirements-dev.txt` adds `pytest` +
   `pytest-asyncio`/`xdist`, `httpx`, `black`, `isort`, `flake8`, `mypy`.
 - **Absent**, install before use: `leaflet`/`@types/leaflet`, any
   other icon pack, any font package outside the §2 manifest.
