@@ -24,6 +24,23 @@ export const ISSUE_TYPES = ["Lift breakdown", "Lift not operating", "Door issues
 export function inr(v: number | null | undefined): string {
 	return "₹" + Number(v ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
+
+const ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen",
+	"Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+const below100 = (n: number) => n < 20 ? ONES[n] : TENS[Math.floor(n / 10)] + (n % 10 ? `-${ONES[n % 10]}` : "");
+const below1000 = (n: number) => [n >= 100 ? `${ONES[Math.floor(n / 100)]} Hundred` : "", n % 100 ? below100(n % 100) : ""].filter(Boolean).join(" ");
+function indian(n: number): string {
+	const crore = Math.floor(n / 1e7), lakh = Math.floor((n % 1e7) / 1e5), thousand = Math.floor((n % 1e5) / 1000), rest = n % 1000;
+	return [crore ? `${indian(crore)} Crore` : "", lakh ? `${below100(lakh)} Lakh` : "", thousand ? `${below100(thousand)} Thousand` : "",
+		rest ? below1000(rest) : ""].filter(Boolean).join(" ");
+}
+/** Indian numbering, mirrors backend lib/pdf.amount_in_words. */
+export function amountInWords(v: number): string {
+	const total = Math.round(Number(v || 0) * 100) / 100;
+	const rupees = Math.floor(total), paise = Math.round((total - rupees) * 100);
+	return `Rupees ${indian(rupees) || "Zero"}${paise ? ` and ${below100(paise)} Paise` : ""} Only`;
+}
 export function fmtDate(iso?: string | null): string {
 	if (!iso) return "—";
 	const d = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);

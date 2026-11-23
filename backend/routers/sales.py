@@ -1,4 +1,5 @@
 """Site inspections, quotations (with revisions + approval limits), orders/installations."""
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -7,8 +8,10 @@ from fastapi.responses import Response
 
 from lib.auth import MGMT, current_user, is_mgmt, require
 from lib.common import ORDER_STAGES, audit, clean, get_settings, iso_now, new_id, next_ref, norm_iso, notify
+from lib.dates import today_iso
 from lib.db import db
 from lib.pdf import inspection_pdf, quotation_pdf
+from lib.quote_defaults import DEFAULT_QUOTE_DEFAULTS, PER_QUOTE_KEYS, get_quote_defaults
 from models.schemas import QuotationIn, QuoteAction, QuoteResponseIn, Quotation
 from routers.leads import get_scoped_lead, set_status
 
@@ -113,6 +116,31 @@ EDITABLE = {"Draft", "Pending Approval", "Rejected"}
 ISSUED = {"Approved", "Sent to Customer", "Under Negotiation", "Expired"}
 
 
+def _spec(d: dict, key: str) -> str:
+	return next((str(s.get("value") or "") for s in d.get("tech_specs") or [] if s.get("key") == key), "")
+
+
+def _first_int(text: str) -> int | None:
+	m = re.search(r"\d+", text or "")
+	return int(m.group()) if m else None
+
+
+def derive_summary(d: dict) -> None:
+	"""Keep the short summary fields (used in lists, reports and orders) in step with the technical specs."""
+	d["capacity"] = _spec(d, "capacity") or d.get("capacity")
+	d["lifts_count"] = _first_int(_spec(d, "elevator_count")) or d.get("lifts_count")
+	d["stops"] = _first_int(_spec(d, "stops")) or d.get("stops")
+	d["floors"] = d.get("stops") or d.get("floors")
+	if d.get("payment_schedule"):
+		d["payment_terms"] = "; ".join(f"{p['pct']:g}% {p['description']}".strip() for p in d["payment_schedule"])
+
+
+async def with_quote_defaults(q: dict) -> dict:
+	"""Fill fields missing on quotations created before the multi-page format."""
+	defaults = await get_quote_defaults()
+	return {**q, **{k: defaults[k] for k in PER_QUOTE_KEYS if q.get(k) is None}}
+
+
 async def snapshot(q: dict):
 	snap = {k: v for k, v in q.items() if k not in ("_id", "approval_history", "negotiation_notes", "share", "view_count",
 													 "first_viewed_at", "last_viewed_at", "customer_responses")}
@@ -134,15 +162,26 @@ async def list_quotations(status: str | None = None, user: dict = Depends(curren
 async def create_quotation(body: QuotationIn, user: dict = Depends(require(*MGMT))):
 	lead = await get_scoped_lead(body.lead_id or "", user)
 	s = await get_settings()
+	defaults = await get_quote_defaults()
 	data = body.model_dump(exclude={"change_note"})
 	data["items"] = [i for i in data["items"] if i["description"].strip()]
-	for k in ("payment_terms", "warranty", "terms", "delivery_timeline", "installation_timeline"):
+	for k in PER_QUOTE_KEYS:
+		if data.get(k) is None:
+			data[k] = defaults[k]
+	for k in ("payment_terms", "terms"):
 		data[k] = data.get(k) or s.get(k)
 	data["valid_until"] = data.get("valid_until") or (datetime.now(timezone.utc) + timedelta(days=int(s["quote_validity_days"]))).strftime("%Y-%m-%d")
-	data["project_address"] = data.get("project_address") or lead.get("address") or f"{lead.get('area') or ''}, {lead.get('city') or ''}"
+	lead_address = "\n".join(x for x in (lead.get("address"), lead.get("area"), lead.get("city")) if x)
+	data["project_address"] = data.get("project_address") or lead_address
+	data["customer_name"] = data.get("customer_name") or lead["name"]
+	data["customer_mobile"] = data.get("customer_mobile") or lead["mobile"]
+	data["customer_email"] = data.get("customer_email") or lead.get("email")
+	data["customer_address"] = data.get("customer_address") or lead_address
+	data["quote_date"] = data.get("quote_date") or today_iso()
+	derive_summary(data)
 	now = iso_now()
 	q = {"id": new_id(), "number": await next_ref("QTN"), "revision": 1, "status": "Draft", "lead_ref": lead["ref"],
-		 "customer_id": lead["customer_id"], "customer_name": lead["name"], "customer_mobile": lead["mobile"], **data,
+		 "customer_id": lead["customer_id"], **data,
 		 "totals": compute_totals(data), "approval_history": [], "negotiation_notes": [], "created_by": user["id"],
 		 "created_by_name": user["name"], "order_id": None, "created_at": now, "updated_at": now}
 	await db.quotations.insert_one(dict(q))
@@ -178,6 +217,7 @@ async def edit_quotation(qid: str, body: QuotationIn, user: dict = Depends(requi
 	keep = {k: q.get(k) for k in QuotationIn.model_fields if k not in ("lead_id", "inspection_id", "change_note")}
 	data = {**keep, **{k: v for k, v in sent.items() if v is not None or k not in keep}}
 	data["items"] = [i for i in data.get("items") or [] if i["description"].strip()]
+	derive_summary(data)
 	data["totals"] = compute_totals(data)
 	now = iso_now()
 	old_total = q["totals"].get("total")
@@ -262,7 +302,7 @@ async def quotation_action(qid: str, body: QuoteAction, user: dict = Depends(req
 
 
 @router.get("/quotations/{qid}/pdf")
-async def quotation_pdf_route(qid: str, revision: int | None = None, user: dict = Depends(current_user)):
+async def quotation_pdf_route(qid: str, revision: int | None = None, inline: bool = False, user: dict = Depends(current_user)):
 	q = await db.quotations.find_one({"id": qid}, {"_id": 0})
 	if not q:
 		raise HTTPException(404, "Quotation not found")
@@ -272,9 +312,30 @@ async def quotation_pdf_route(qid: str, revision: int | None = None, user: dict 
 		q = await db.quotation_revisions.find_one({"quotation_id": qid, "revision": revision}, {"_id": 0})
 		if not q:
 			raise HTTPException(404, "Revision not found")
-	pdf = quotation_pdf(with_expiry(q), await get_settings())
+	pdf = quotation_pdf(await with_quote_defaults(with_expiry(q)), await get_settings())
+	disposition = "inline" if inline else "attachment"
 	return Response(pdf, media_type="application/pdf",
-					headers={"Content-Disposition": f'attachment; filename="{q["number"]}-R{q["revision"]}.pdf"'})
+					headers={"Content-Disposition": f'{disposition}; filename="{q["number"]}-R{q["revision"]}.pdf"'})
+
+
+@router.get("/quote-defaults")
+async def quote_defaults_get(user: dict = Depends(require(*MGMT))):
+	return await get_quote_defaults()
+
+
+@router.put("/quote-defaults")
+async def quote_defaults_put(body: dict, user: dict = Depends(require(*MGMT))):
+	changes = {k: v for k, v in body.items() if k in DEFAULT_QUOTE_DEFAULTS and isinstance(v, type(DEFAULT_QUOTE_DEFAULTS[k]))}
+	if "material_catalog" in changes:
+		cat = changes["material_catalog"]
+		if not all(isinstance(k, str) and k.strip() and isinstance(v, list) for k, v in cat.items()):
+			raise HTTPException(400, "Each material category needs a name and a list of options")
+	if "payment_schedule" in changes and abs(sum(float(p.get("pct") or 0) for p in changes["payment_schedule"]) - 100) > 0.01:
+		raise HTTPException(400, "Default payment schedule must add up to 100%")
+	if changes:
+		await db.settings.update_one({"id": "quote_defaults"}, {"$set": changes}, upsert=True)
+		await audit(user, "quotation_defaults_changed", "settings", new={"fields": sorted(changes)})
+	return await get_quote_defaults()
 
 
 # ---------------- Customer share link (public, token-based) ----------------
@@ -359,7 +420,7 @@ async def public_quote(token: str, request: Request):
 @router.get("/public/quotes/{token}/pdf")
 async def public_quote_pdf(token: str):
 	q, snap = await _shared(token)
-	pdf = quotation_pdf(snap, await get_settings())
+	pdf = quotation_pdf(await with_quote_defaults(snap), await get_settings())
 	return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{snap["number"]}-R{snap["revision"]}.pdf"'})
 
 

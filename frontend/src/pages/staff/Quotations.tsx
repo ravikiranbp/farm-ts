@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, Download } from "lucide-react";
+import { Download, Eye, Mail } from "lucide-react";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
-import type { Lead, QuoteFields, QuoteItem, QuoteView, Quotation, QuotationRevision, Settings, User } from "@/lib/types";
-import { LIFT_TYPES, errMsg, fmtDate, fmtDateTime, inr } from "@/lib/format";
-import { Empty, Field, KV, NSelect, PageHeader, Panel, StatusBadge } from "@/components/common";
+import type { Lead, QuoteFields, QuoteView, Quotation, QuotationRevision, Settings, User } from "@/lib/types";
+import { errMsg, fmtDate, fmtDateTime, inr } from "@/lib/format";
+import { Empty, KV, NSelect, PageHeader, Panel, StatusBadge } from "@/components/common";
+import { QuoteForm, useQuoteDefaults, withDefaults } from "./QuoteForm";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ export function QuotationsList() {
   return (
     <div>
       <PageHeader title="Quotations" subtitle={me.role === "telecaller" ? "Quotations for your leads (view only)" : "Create quotations from an approved lead's page"}
-        actions={<NSelect value={status} onChange={(e) => setStatus(e.target.value)} options={Q_STATUSES} placeholder="All statuses" className="w-48" data-testid="quotation-status-filter" />} />
+        actions={<>{me.role !== "telecaller" && <Link to="/staff/quotations/defaults" className="rounded-md border border-line px-3 py-1.5 text-sm hover:border-gold" data-testid="quote-defaults-link">Quotation defaults</Link>}<NSelect value={status} onChange={(e) => setStatus(e.target.value)} options={Q_STATUSES} placeholder="All statuses" className="w-48" data-testid="quotation-status-filter" /></>} />
       <div className="rounded-lg border border-line bg-panel">
         <Table><TableHeader><TableRow className="border-line"><TableHead>Number</TableHead><TableHead>Customer</TableHead><TableHead className="hidden md:table-cell">Lift</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="hidden sm:table-cell">Updated</TableHead></TableRow></TableHeader>
           <TableBody>{(data ?? []).map((q) => (
@@ -39,93 +40,64 @@ export function QuotationsList() {
   );
 }
 
-const BLANK: QuoteFields = { items: [{ description: "", qty: 1, unit_price: 0 }], installation_charges: 0, transport_charges: 0, additional_charges: 0, discount_pct: 0, tax_pct: 18, lifts_count: 1 };
-
-function calc(f: QuoteFields) {
-  const items = f.items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.unit_price || 0), 0);
-  const subtotal = items + Number(f.installation_charges || 0) + Number(f.transport_charges || 0) + Number(f.additional_charges || 0);
-  const discount = subtotal * Number(f.discount_pct || 0) / 100;
-  const tax = (subtotal - discount) * Number(f.tax_pct || 0) / 100;
-  return { subtotal, discount, tax, total: subtotal - discount + tax };
-}
-
-function QuoteForm({ initial, onSave, saving, isIssued }: { initial: QuoteFields; onSave: (f: QuoteFields & { change_note?: string }) => void; saving: boolean; isIssued?: boolean }) {
-  const [f, setF] = useState<QuoteFields>(initial);
-  const [note, setNote] = useState("");
-  useEffect(() => setF(initial), [initial]);
-  const set = (k: keyof QuoteFields, num?: boolean) => (e: { target: { value: string } }) => setF({ ...f, [k]: num ? (e.target.value === "" ? 0 : Number(e.target.value)) : e.target.value });
-  const setItem = (i: number, k: keyof QuoteItem, v: string) => setF({ ...f, items: f.items.map((it, j) => j === i ? { ...it, [k]: k === "description" ? v : Number(v) } : it) });
-  const t = calc(f);
-  return (
-    <div className="space-y-5">
-      <Panel title="Lift configuration">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Lift category"><NSelect value={f.lift_category ?? ""} onChange={set("lift_category")} options={LIFT_TYPES} placeholder="Select" data-testid="q-category-select" /></Field>
-          <Field label="Capacity"><Input value={f.capacity ?? ""} onChange={set("capacity")} placeholder="e.g. 8 persons / 544 kg" data-testid="q-capacity-input" /></Field>
-          <Field label="Number of lifts"><Input type="number" value={f.lifts_count ?? ""} onChange={set("lifts_count", true)} data-testid="q-lifts-input" /></Field>
-          <Field label="Floors"><Input type="number" value={f.floors ?? ""} onChange={set("floors", true)} data-testid="q-floors-input" /></Field>
-          <Field label="Stops"><Input type="number" value={f.stops ?? ""} onChange={set("stops", true)} data-testid="q-stops-input" /></Field>
-          <Field label="Valid until"><Input type="date" value={f.valid_until ?? ""} onChange={set("valid_until")} data-testid="q-valid-input" /></Field>
-          <Field label="Project address" className="sm:col-span-3"><Input value={f.project_address ?? ""} onChange={set("project_address")} data-testid="q-address-input" /></Field>
-          <Field label="Technical configuration" className="sm:col-span-3"><Textarea rows={2} value={f.technical_config ?? ""} onChange={set("technical_config")} placeholder="Drive, controller, door type, cabin finish…" data-testid="q-tech-input" /></Field>
-          <Field label="Product description" className="sm:col-span-3"><Textarea rows={2} value={f.product_description ?? ""} onChange={set("product_description")} data-testid="q-desc-input" /></Field>
-        </div>
-      </Panel>
-      <Panel title="Price breakup">
-        <div className="space-y-2">
-          {f.items.map((it, i) => (
-            <div key={i} className="grid grid-cols-[1fr_70px_120px_auto] gap-2" data-testid="q-item-row">
-              <Input placeholder="Material / equipment description" value={it.description} onChange={(e) => setItem(i, "description", e.target.value)} data-testid={`q-item-desc-${i}`} />
-              <Input type="number" min={1} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} data-testid={`q-item-qty-${i}`} />
-              <Input type="number" min={0} value={it.unit_price} onChange={(e) => setItem(i, "unit_price", e.target.value)} data-testid={`q-item-price-${i}`} />
-              <Button variant="ghost" size="icon" onClick={() => setF({ ...f, items: f.items.filter((_, j) => j !== i) })} aria-label="Remove item"><Trash2 className="h-4 w-4" /></Button>
-            </div>))}
-          <Button variant="outline" size="sm" onClick={() => setF({ ...f, items: [...f.items, { description: "", qty: 1, unit_price: 0 }] })} data-testid="q-add-item-btn"><Plus className="h-4 w-4" />Add item</Button>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-5">
-          <Field label="Installation (₹)"><Input type="number" value={f.installation_charges} onChange={set("installation_charges", true)} data-testid="q-install-input" /></Field>
-          <Field label="Transport (₹)"><Input type="number" value={f.transport_charges} onChange={set("transport_charges", true)} data-testid="q-transport-input" /></Field>
-          <Field label="Additional (₹)"><Input type="number" value={f.additional_charges} onChange={set("additional_charges", true)} data-testid="q-additional-input" /></Field>
-          <Field label="Discount %"><Input type="number" value={f.discount_pct} onChange={set("discount_pct", true)} data-testid="q-discount-input" /></Field>
-          <Field label="Tax / GST %"><Input type="number" value={f.tax_pct} onChange={set("tax_pct", true)} data-testid="q-tax-input" /></Field>
-        </div>
-        <div className="mt-4 ml-auto max-w-xs rounded-md border border-gold/30 bg-gold/5 p-3 text-sm">
-          <KV k="Subtotal" v={inr(t.subtotal)} /><KV k="Discount" v={`− ${inr(t.discount)}`} /><KV k="Tax" v={inr(t.tax)} />
-          <div className="flex justify-between pt-2 font-heading text-lg font-semibold text-champagne"><span>Final amount</span><span data-testid="q-total">{inr(t.total)}</span></div>
-        </div>
-      </Panel>
-      <Panel title="Commercial terms">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {([["payment_terms", "Payment schedule"], ["delivery_timeline", "Delivery timeline"], ["installation_timeline", "Installation timeline"], ["warranty", "Warranty"], ["amc_info", "AMC information"], ["terms", "Terms & conditions"]] as [keyof QuoteFields, string][]).map(([k, l]) => (
-            <Field key={k} label={l}><Textarea rows={2} value={(f[k] as string) ?? ""} onChange={set(k)} placeholder="Leave blank to use company default" data-testid={`q-${k}-input`} /></Field>))}
-        </div>
-      </Panel>
-      {isIssued && <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-200">This quotation has been issued. Saving will create a new revision; the issued version is preserved.</p>}
-      <div className="flex flex-wrap gap-2">
-        <Input placeholder="Change note (what changed and why)" value={note} onChange={(e) => setNote(e.target.value)} className="max-w-md" data-testid="q-change-note-input" />
-        <Button className="gold-btn" disabled={saving} onClick={() => onSave({ ...f, change_note: note || undefined })} data-testid="q-save-btn">{saving ? "Saving…" : isIssued ? "Save as new revision" : "Save draft"}</Button>
-      </div>
-    </div>
-  );
-}
-
 export function QuotationNew() {
   const [sp] = useSearchParams();
   const nav = useNavigate();
   const leadId = sp.get("lead") ?? "";
   const { data } = useQuery({ queryKey: ["lead", leadId], queryFn: () => apiGet<{ lead: Lead }>(`/leads/${leadId}`), enabled: !!leadId });
   const { data: s } = useQuery({ queryKey: ["settings"], queryFn: () => apiGet<Settings>("/settings") });
+  const { data: d } = useQuoteDefaults(!!leadId);
   const m = useMutation({ mutationFn: (f: QuoteFields) => apiPost<Quotation>("/quotations", { ...f, lead_id: leadId }), onSuccess: (q) => { toast.success(`Quotation ${q.number} created`); nav(`/staff/quotations/${q.id}`, { replace: true }); }, onError: (e) => toast.error(errMsg(e)) });
-  if (!leadId) return <p className="text-steel">Open a lead and click "Create quotation".</p>;
   const l = data?.lead;
-  const init: QuoteFields = { ...BLANK, tax_pct: s?.tax_pct ?? 18, lift_category: l?.lift_type ?? "", floors: l?.floors ?? null, stops: l?.floors ?? null, lifts_count: l?.lifts_count ?? 1, project_address: [l?.address, l?.area, l?.city].filter(Boolean).join(", ") };
-  return (<div><PageHeader title="New quotation" subtitle={l ? `${l.name} · ${l.ref}` : "Loading lead…"} />{l && <QuoteForm initial={init} onSave={(f) => m.mutate(f)} saving={m.isPending} />}</div>);
+  const init = useMemo<QuoteFields | null>(() => {
+    if (!l || !d || !s) return null;
+    const floors = l.floors ?? null;
+    const lifts = l.lifts_count ?? 1;
+    const specs = d.tech_specs.map((r) => {
+      if (r.key === "elevator_count") return { ...r, value: String(lifts) };
+      if (floors && (r.key === "floors" || r.key === "stops")) return { ...r, value: String(floors) };
+      return { ...r };
+    });
+    const base: QuoteFields = {
+      items: [{ description: d.price_description, qty: lifts, unit_price: 0 }], installation_charges: 0, transport_charges: 0,
+      additional_charges: 0, discount_pct: 0, tax_pct: s.tax_pct ?? 18, lift_category: l.lift_type ?? "", floors, stops: floors,
+      lifts_count: lifts, project_address: [l.address, l.area, l.city].filter(Boolean).join(", "),
+      customer_name: l.name, customer_mobile: l.mobile, customer_email: l.email ?? "",
+      customer_address: [l.address, l.area, l.city].filter(Boolean).join("\n"), quote_date: new Date().toISOString().slice(0, 10),
+    };
+    return { ...withDefaults(base, d), tech_specs: specs };
+  }, [l, d, s]);
+  if (!leadId) return <p className="text-steel">Open a lead and click "Create quotation".</p>;
+  return (<div><PageHeader title="New quotation" subtitle={l ? `${l.name} · ${l.ref}` : "Loading lead…"}
+    actions={<Link to="/staff/quotations/defaults" className="rounded-md border border-line px-3 py-1.5 text-sm hover:border-gold">Quotation defaults</Link>} />
+    {init ? <QuoteForm initial={init} catalog={d?.material_catalog ?? {}} onSave={(f) => m.mutate(f)} saving={m.isPending} /> : <p className="text-steel">Loading…</p>}</div>);
+}
+
+async function emailQuote(q: Quotation, me: User) {
+  const res = await fetch(`/api/quotations/${q.id}/pdf`, { credentials: "include" });
+  if (!res.ok) throw new Error("Could not generate the PDF");
+  const blob = await res.blob();
+  const name = `${q.number}-R${q.revision}.pdf`;
+  const file = new File([blob], name, { type: "application/pdf" });
+  const link = q.share && !q.share.revoked ? `${window.location.origin}/q/${q.share.token}` : "";
+  const subject = `Quotation ${q.number} (Revision ${q.revision}) - V Tech Elevators`;
+  const body = `Dear ${q.customer_name},\n\nPlease find attached our quotation ${q.number} (Revision ${q.revision}).${link ? `\n\nYou can also view it online: ${link}` : ""}\n\nRegards,\n${me.name}\nV Tech Elevators`;
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: subject, text: body }); return; } catch (e) { if ((e as Error).name === "AbortError") return; }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  window.location.href = `mailto:${encodeURIComponent(q.customer_email ?? "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  toast.info("PDF downloaded — attach it to the email that just opened.");
 }
 
 function diff(a: QuotationRevision, b: QuotationRevision): string[] {
   const keys: (keyof QuoteFields)[] = ["lift_category", "capacity", "floors", "stops", "lifts_count", "installation_charges", "transport_charges", "additional_charges", "discount_pct", "tax_pct", "valid_until", "payment_terms", "warranty"];
   const out = keys.filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => `${k.replace(/_/g, " ")}: ${a[k] ?? "—"} → ${b[k] ?? "—"}`);
   if (JSON.stringify(a.items) !== JSON.stringify(b.items)) out.push(`line items changed (${a.items.length} → ${b.items.length})`);
+  for (const [k, label] of [["tech_specs", "technical specifications"], ["payment_schedule", "payment schedule"], ["materials", "materials"], ["builder_side_work", "builder side work"], ["contract_conditions", "conditions"], ["preparatory_work", "preparatory work"], ["builder_work", "work by builder"]] as [keyof QuoteFields, string][])
+    if (a[k] != null && JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push(`${label} changed`);
   if (a.totals.total !== b.totals.total) out.push(`total: ${inr(a.totals.total)} → ${inr(b.totals.total)}`);
   return out;
 }
@@ -174,10 +146,15 @@ export function QuotationDetail() {
   const refresh = () => { qc.invalidateQueries({ queryKey: ["quotation", id] }); qc.invalidateQueries({ queryKey: ["quotations"] }); };
   const save = useMutation({ mutationFn: (f: QuoteFields) => apiPut<Quotation>(`/quotations/${id}`, f), onSuccess: (q) => { toast.success(`Saved — revision ${q.revision}`); setEditing(false); refresh(); }, onError: (e) => toast.error(errMsg(e)) });
   const act = useMutation({ mutationFn: () => apiPost<Quotation>(`/quotations/${id}/action`, action), onSuccess: (q) => { toast.success(`Quotation is now ${q.status}`); setAction(null); refresh(); }, onError: (e) => toast.error(errMsg(e)) });
+  const mgmt = me.role !== "telecaller";
+  const { data: dflt } = useQuoteDefaults(mgmt);
+  const [emailing, setEmailing] = useState(false);
+  const q0 = data?.quotation;
+  const editInit = useMemo(() => (q0 ? withDefaults(q0, dflt) : null), [q0, dflt]);
   if (isLoading) return <p className="text-steel">Loading…</p>;
   if (error || !data) return <p className="text-red-300">{errMsg(error)}</p>;
   const q = data.quotation;
-  const mgmt = me.role !== "telecaller";
+  const sendEmail = async () => { setEmailing(true); try { await emailQuote(q, me); } catch (e) { toast.error(errMsg(e)); } finally { setEmailing(false); } };
   const issued = ["Approved", "Sent to Customer", "Under Negotiation", "Expired"].includes(q.status);
   const btns: [string, string][] = ({
     Draft: [["submit", "Submit for approval"], ["approve", "Approve"]], "Pending Approval": [["approve", "Approve"], ["reject", "Reject"]],
@@ -188,13 +165,15 @@ export function QuotationDetail() {
     <div>
       <PageHeader title={`${q.number} · Revision ${q.revision}`} subtitle={`${q.customer_name} · ${q.lead_ref ?? ""} · by ${q.created_by_name}`}
         actions={<>
-          <a href={`/api/quotations/${q.id}/pdf`} className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 px-3 py-1.5 text-sm text-champagne hover:bg-gold/10" data-testid="quotation-pdf-btn"><Download className="h-4 w-4" />PDF</a>
+          <a href={`/api/quotations/${q.id}/pdf?inline=1`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm hover:border-gold" data-testid="quotation-preview-btn"><Eye className="h-4 w-4" />Preview</a>
+          <a href={`/api/quotations/${q.id}/pdf`} className="inline-flex items-center gap-1.5 rounded-md border border-gold/50 px-3 py-1.5 text-sm text-champagne hover:bg-gold/10" data-testid="quotation-pdf-btn"><Download className="h-4 w-4" />Download</a>
+          <Button variant="outline" disabled={emailing} onClick={sendEmail} data-testid="quotation-email-btn"><Mail className="h-4 w-4" />{emailing ? "Preparing…" : "Email"}</Button>
           {mgmt && q.status !== "Accepted" && <Button variant="outline" onClick={() => setEditing(!editing)} data-testid="quotation-edit-btn">{editing ? "Cancel edit" : issued ? "Revise" : "Edit"}</Button>}
           {mgmt && btns.map(([a, l]) => <Button key={a} className={a === "approve" || a === "accept" ? "gold-btn" : ""} variant={a.includes("reject") ? "destructive" : a === "approve" || a === "accept" ? "default" : "outline"} onClick={() => setAction({ action: a, comment: "" })} data-testid={`quotation-action-${a}`}>{l}</Button>)}
           {q.order_id && <Link to="/staff/orders" className="rounded-md border border-emerald-500/40 px-3 py-1.5 text-sm text-emerald-300">View order →</Link>}
         </>} />
       <div className="mb-4 flex items-center gap-2"><StatusBadge status={q.status} testId="quotation-status" /><span className="text-xs text-steel">Valid until {fmtDate(q.valid_until)}</span></div>
-      {editing ? <QuoteForm initial={q} onSave={(f) => save.mutate(f)} saving={save.isPending} isIssued={issued} /> : (
+      {editing && editInit ? <QuoteForm initial={editInit} catalog={dflt?.material_catalog ?? {}} meta={{ number: q.number, revision: q.revision, status: q.status }} onSave={(f) => save.mutate(f)} saving={save.isPending} isIssued={issued} /> : (
         <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
           <Panel title="Summary">
             <KV k="Lift" v={`${q.lift_category ?? "—"} · ${q.capacity ?? "—"}`} /><KV k="Floors / stops / lifts" v={`${q.floors ?? "—"} / ${q.stops ?? "—"} / ${q.lifts_count ?? "—"}`} /><KV k="Address" v={q.project_address} />
@@ -202,7 +181,9 @@ export function QuotationDetail() {
             <div className="mt-2 border-t border-line pt-2"><KV k="Installation / transport / additional" v={`${inr(q.installation_charges)} / ${inr(q.transport_charges)} / ${inr(q.additional_charges)}`} />
               <KV k="Subtotal" v={inr(q.totals.subtotal)} /><KV k={`Discount (${q.discount_pct}%)`} v={`− ${inr(q.totals.discount)}`} /><KV k={`Tax (${q.tax_pct}%)`} v={inr(q.totals.tax)} />
               <div className="flex justify-between pt-2 font-heading text-xl font-semibold text-champagne"><span>Final</span><span data-testid="quotation-total">{inr(q.totals.total)}</span></div></div>
-            <div className="mt-4 space-y-1 text-xs text-steel"><p><b>Payment:</b> {q.payment_terms}</p><p><b>Delivery:</b> {q.delivery_timeline}</p><p><b>Installation:</b> {q.installation_timeline}</p><p><b>Warranty:</b> {q.warranty}</p><p><b>Terms:</b> {q.terms}</p></div>
+            <div className="mt-4 space-y-1 text-xs text-steel"><p><b>Payment:</b> {q.payment_terms}</p><p><b>Delivery:</b> {q.delivery_timeline}</p><p><b>Installation:</b> {q.installation_timeline}</p><p><b>Warranty:</b> {q.warranty}</p>{q.terms && <p><b>Terms:</b> {q.terms}</p>}</div>
+            {!!q.tech_specs?.length && <details className="mt-4 text-sm"><summary className="cursor-pointer text-champagne">Technical specifications</summary>{q.tech_specs.map((r) => <KV key={r.key} k={r.label} v={r.value} />)}</details>}
+            {!!q.materials?.length && <details className="mt-2 text-sm"><summary className="cursor-pointer text-champagne">Main materials</summary>{q.materials.map((r, i) => <KV key={i} k={r.category} v={r.detail} />)}</details>}
           </Panel>
           <div className="space-y-5">
             {(q.share || ["Approved", "Sent to Customer", "Under Negotiation"].includes(q.status)) && <SharePanel q={q} views={data.views ?? []} mgmt={mgmt} onChange={refresh} />}

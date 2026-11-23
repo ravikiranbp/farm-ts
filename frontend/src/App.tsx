@@ -12,6 +12,7 @@ import Dashboard from "@/pages/staff/Dashboard";
 import Leads from "@/pages/staff/Leads";
 import LeadDetail from "@/pages/staff/LeadDetail";
 import { QuotationDetail, QuotationNew, QuotationsList } from "@/pages/staff/Quotations";
+import { QuoteDefaultsPage } from "@/pages/staff/QuoteForm";
 import { CustomerProfile, CustomersPage, FollowupsPage, InspectionsPage } from "@/pages/staff/CrmPages";
 import { NotificationsPage, OrdersPage, ServicePage } from "@/pages/staff/OpsPages";
 import { AuditPage, ContentPage, EmployeesPage, ReportsPage, SettingsPage } from "@/pages/staff/AdminPages";
@@ -47,6 +48,7 @@ export default function App() {
 				<Route path="inspections" element={<InspectionsPage />} />
 				<Route path="quotations" element={<QuotationsList />} />
 				<Route path="quotations/new" element={<QuotationNew />} />
+				<Route path="quotations/defaults" element={<QuoteDefaultsPage />} />
 				<Route path="quotations/:id" element={<QuotationDetail />} />
 				<Route path="orders" element={<OrdersPage />} />
 				<Route path="service" element={<ServicePage />} />
