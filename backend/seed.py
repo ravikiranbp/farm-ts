@@ -22,8 +22,8 @@ IMG = {
 NOTE = "Indicative — to be verified by V Tech engineering"
 
 USERS = [
-	("Arjun Rao (Admin)", "admin@vtech.in", "Admin@123", "admin"),
-	("Meera Nair (Manager)", "manager@vtech.in", "Manager@123", "manager"),
+	("Ravikiran P", "admin@vtech.in", "Admin@123", "admin"),
+	("Manjunath K S", "manager@vtech.in", "Manager@123", "manager"),
 	("Kiran Kumar (Manager 2)", "manager2@vtech.in", "Manager@123", "manager"),
 	("Priya S (Telecaller)", "priya@vtech.in", "Telecaller@123", "telecaller"),
 	("Rahul M (Telecaller)", "rahul@vtech.in", "Telecaller@123", "telecaller"),
