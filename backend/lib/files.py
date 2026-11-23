@@ -13,7 +13,7 @@ from fastapi.responses import Response
 
 from lib.db import db  # also loads backend/.env before the settings below are read
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/").removesuffix("/rest/v1")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
 SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "files").strip()
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
