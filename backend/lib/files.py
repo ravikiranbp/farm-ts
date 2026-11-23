@@ -53,7 +53,7 @@ async def store_file(fid: str, data: bytes, content_type: str) -> None:
 		r = await _upload(fid, data, content_type, upsert=True)
 		if r.status_code >= 300:
 			logger.error("Supabase upload %s failed (%s): %s", fid, r.status_code, r.text[:300])
-			raise HTTPException(502, "Could not store the file. Please try again.")
+			raise HTTPException(500, "Could not store the file. Please try again.")
 	else:
 		UPLOAD_DIR.mkdir(exist_ok=True)
 		await asyncio.to_thread((UPLOAD_DIR / fid).write_bytes, data)
@@ -68,7 +68,7 @@ async def _load(f: dict) -> bytes | None:
 		if r.status_code in (400, 404):  # Supabase reports a missing object as 400 {"statusCode":"404"} or 404
 			return None
 		logger.error("Supabase download %s failed (%s): %s", f["id"], r.status_code, r.text[:300])
-		raise HTTPException(502, "Could not load the file. Please try again.")
+		raise HTTPException(500, "Could not load the file. Please try again.")
 	path = _local_path(f)
 	return await asyncio.to_thread(path.read_bytes) if path.is_file() else None
 

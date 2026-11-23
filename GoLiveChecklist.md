@@ -58,9 +58,10 @@ Shown on the website (Contact page, footer, WhatsApp button) and on quotation / 
 - [x] (Optional) **Google Maps location** on Contact page — not needed (decided)
 - [ ] (Optional) **Social media links** — send Instagram / Facebook / YouTube links when available
 
-## C. Optional feature
+## C. Features in progress
 
-- [ ] **Upload photo** button for products and projects (store photos in Supabase instead of pasting image links)
+- [x] **Upload photos for projects** (products keep image links) — Website Content → projects → Upload photos
+- [x] **Auto-retry in Cloudflare proxy** — waits up to ~30 s while Render wakes up / restarts instead of showing 502
 
 ---
 
@@ -82,3 +83,19 @@ Shown on the website (Contact page, footer, WhatsApp button) and on quotation / 
 - [ ] (Optional) Buy a domain (e.g. `vtechelevators.in`) → add in Cloudflare Pages → Custom domains
 - [ ] If the domain is added and `farm-ts.pages.dev` is redirected → update both cron job URLs
 - [ ] Download a backup regularly — Staff → Settings → Download full database backup
+
+---
+
+## Done — requests already completed (for reference)
+
+- [x] Deployment: Cloudflare Pages (website) + Render (API, Singapore) + Supabase Storage (files) + MongoDB Atlas M0 (Singapore)
+- [x] API hidden behind Cloudflare: Render address, keys and API docs never reach the browser; direct Render access blocked
+- [x] Uploaded files stored in Supabase (private bucket `Files`), not in the database
+- [x] Starting data loaded into Atlas; demo PDFs cleaned up
+- [x] Brochure PDF upload limit raised to 10 MB (other files 5 MB)
+- [x] Only one brochure kept ("V Tech Complete Lift Catalogue"); "Home Elevators Brochure" removed
+- [x] Consent checkbox removed from enquiry, brochure and service request forms
+- [x] Home-page offer overlay: admin tab, image-only popup, ✕ close, 2 s delay, 10 s auto-close, once per visit, tap → enquiry form "Enquiry about Offer"
+- [x] Staff names: admin → **Ravikiran P**, manager → **Manjunath K S**
+- [x] Product spec "Note" row removed; project indicative note removed; product disclaimer always shown
+- [x] Security fixes: CORS locked down, password change signs out other sessions, slim production dependencies

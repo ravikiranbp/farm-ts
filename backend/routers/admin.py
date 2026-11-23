@@ -95,7 +95,17 @@ async def cms_update(kind: str, iid: str, body: dict, user: dict = Depends(requi
 		await coll.update_one({"id": iid}, {"$set": changes})
 		await audit(user, "website_content_updated", f"cms:{kind}", record_id=iid,
 					old={k: old.get(k) for k in changes if k != "updated_at"}, new=changes)
+		if kind == "projects" and "photos" in changes:
+			await _drop_removed_photos(old.get("photos") or [], changes["photos"] or [])
 	return await coll.find_one({"id": iid}, {"_id": 0})
+
+
+async def _drop_removed_photos(before: list[str], after: list[str]) -> None:
+	for url in set(before) - set(after):
+		if url.startswith("/api/public/files/"):
+			f = await db.files.find_one({"id": url.rsplit("/", 1)[-1], "entity_type": "project"})
+			if f:
+				await delete_file(f)
 
 
 @router.post("/cms/{kind}/{iid}/remove")

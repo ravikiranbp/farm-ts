@@ -196,17 +196,40 @@ function CmsTab({ kind }: { kind: string }) {
     mutationFn: async ({ id, file }: { id: string; file: File }) => { const fd = new FormData(); fd.append("file", file); fd.append("entity_type", "brochure"); fd.append("entity_id", id); const r = await apiUpload<{ id: string }>("/files", fd); return apiPut(`/cms/brochures/${id}`, { file_id: r.id }); },
     onSuccess: () => { toast.success("Brochure file attached"); inv(); }, onError: (e) => toast.error(errMsg(e)),
   });
+  const photos = (it: CmsItem) => (it.photos as string[] | undefined) ?? [];
+  const addPhotos = useMutation({
+    mutationFn: async ({ it, files }: { it: CmsItem; files: File[] }) => {
+      const urls: string[] = [];
+      for (const file of files) {
+        const fd = new FormData(); fd.append("file", file); fd.append("entity_type", "project"); fd.append("entity_id", it.id!);
+        urls.push(`/api/public/files/${(await apiUpload<{ id: string }>("/files", fd)).id}`);
+      }
+      return apiPut(`/cms/projects/${it.id}`, { photos: [...photos(it), ...urls] });
+    },
+    onSuccess: () => { toast.success("Photos added"); inv(); }, onError: (e) => { toast.error(errMsg(e)); inv(); },
+  });
+  const dropPhoto = useMutation({
+    mutationFn: ({ it, url }: { it: CmsItem; url: string }) => apiPut(`/cms/projects/${it.id}`, { photos: photos(it).filter((u) => u !== url) }),
+    onSuccess: () => { toast.success("Photo removed"); inv(); }, onError: (e) => toast.error(errMsg(e)),
+  });
   const title = CMS_FIELDS[kind][0][0];
   return (
     <Panel actions={<Button size="sm" className="gold-btn" onClick={() => setEd({ f: toForm(kind, {}) })} data-testid={`cms-add-${kind}-btn`}>Add</Button>}>
       {(data ?? []).map((it) => (
         <div key={it.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 py-2 last:border-0" data-testid={`cms-row-${kind}`}>
-          <span className="text-sm">{String(it[title] ?? "")} {it.archived && <span className="text-xs text-steel">(removed)</span>}</span>
+          <div className="text-sm">{String(it[title] ?? "")} {it.archived && <span className="text-xs text-steel">(removed)</span>}
+            {kind === "projects" && photos(it).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{photos(it).map((u) => (
+              <div key={u} className="relative"><img src={u} alt="" className="h-14 w-20 rounded border border-line object-cover" />
+                <button type="button" aria-label="Remove photo" onClick={() => confirm("Remove this photo?") && dropPhoto.mutate({ it, url: u })}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/80 text-xs text-white" data-testid="project-photo-remove">✕</button></div>))}</div>}
+          </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={it.published ? "Active" : "Draft"} />
             <Button size="xs" variant="outline" onClick={() => pub.mutate(it)} data-testid="cms-publish-toggle">{it.published ? "Unpublish" : "Publish"}</Button>
             <Button size="xs" variant="outline" onClick={() => setEd({ id: it.id, f: toForm(kind, it) })} data-testid="cms-edit-btn">Edit</Button>
             {kind === "brochures" && <label className="cursor-pointer text-xs text-gold">Upload PDF<input type="file" accept=".pdf" className="hidden" onChange={(e) => e.target.files?.[0] && upload.mutate({ id: it.id!, file: e.target.files[0] })} /></label>}
+            {kind === "projects" && <label className="cursor-pointer text-xs text-gold">{addPhotos.isPending ? "Uploading…" : "Upload photos"}<input type="file" accept=".jpg,.jpeg,.png,.webp" multiple className="hidden" disabled={addPhotos.isPending}
+              onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) addPhotos.mutate({ it, files: fs }); }} data-testid="project-photo-input" /></label>}
             {!it.archived && <Button size="xs" variant="ghost" onClick={() => confirm("Remove from public display?") && remove.mutate(it.id!)}>Remove</Button>}
           </div>
         </div>))}
