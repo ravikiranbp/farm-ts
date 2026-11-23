@@ -74,8 +74,8 @@ Shown on the website (Contact page, footer, WhatsApp button) and on quotation / 
 
 ## E. Keep the free services awake — https://cron-job.org
 
-- [ ] Job 1: `https://farm-ts.pages.dev/api/` — every **14 minutes**
-- [ ] Job 2: `https://farm-ts.pages.dev/api/health/storage` — days **1, 6, 11, 16, 21, 26** of the month, 03:00
+- [x] Job 1: `https://farm-ts.pages.dev/api/` — every **10 minutes** (auto runs confirmed 200)
+- [x] Job 2: `https://farm-ts.pages.dev/api/health/storage` — `0 3 1,6,11,16,21,26 * *` (test run 200)
 - [ ] "Notify on failure" turned on for both
 
 ## F. Later
