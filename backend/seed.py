@@ -121,8 +121,7 @@ async def main():
 		await db.services.insert_many([{"id": new_id(), "title": t, "description": d, "order": i, "published": True} for i, (t, d) in enumerate(SERVICES)])
 	if not await db.brochures.count_documents({}):
 		settings = await get_settings()
-		for title, desc, prods in [("V Tech Complete Lift Catalogue", "All lift categories, cabin finishes and options.", PRODUCTS),
-								   ("Home Elevators Brochure", "Lifts for villas and independent houses.", [PRODUCTS[1], PRODUCTS[5]])]:
+		for title, desc, prods in [("V Tech Complete Lift Catalogue", "All lift categories, cabin finishes and options.", PRODUCTS)]:
 			fid = new_id()
 			pdf = brochure_pdf(title, prods, settings)
 			await store_file(fid, pdf, "application/pdf")

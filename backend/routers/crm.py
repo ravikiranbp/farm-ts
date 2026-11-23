@@ -17,6 +17,7 @@ ALLOWED = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".w
 		   ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 MAX_BYTES = 5 * 1024 * 1024
+MAX_BROCHURE_BYTES = 10 * 1024 * 1024
 
 
 # ---------------- Customers ----------------
@@ -193,8 +194,9 @@ async def upload(file: UploadFile = File(...), entity_type: str = Form(...), ent
 	if ext not in ALLOWED:
 		raise HTTPException(400, "Allowed file types: JPG, PNG, WEBP, PDF, DOCX, XLSX")
 	data = await file.read()
-	if len(data) > MAX_BYTES:
-		raise HTTPException(400, "File too large (max 5 MB)")
+	limit = MAX_BROCHURE_BYTES if entity_type == "brochure" else MAX_BYTES
+	if len(data) > limit:
+		raise HTTPException(400, f"File too large (max {limit // (1024 * 1024)} MB)")
 	if entity_type == "lead":
 		await get_scoped_lead(entity_id, user)
 	if public and user["role"] != "admin":
