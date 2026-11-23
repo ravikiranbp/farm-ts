@@ -47,16 +47,16 @@ Shown on the website (Contact page, footer, WhatsApp button) and on quotation / 
 
 ## B. Needs a code change — send the content, then it gets updated
 
-- [ ] **Logo & browser icon** — send logo file (PNG or SVG); confirm whether the current `logo.jpeg` is the real logo
-- [ ] **Home page big photo** — send a real installation photo (replaces Unsplash stock photo)
-- [ ] **Home page headline & paragraph** — keep "Elevators engineered to lift lives higher." or send new wording
-- [ ] **Home page highlights** — confirm "Free site inspection · 12 mo warranty · AMC plans" (warranty must match Settings)
-- [ ] **Google search title & description** (`index.html`) — keep or send preferred wording
-- [ ] **Installation steps** (Services page, 8 steps) — confirm or adjust
-- [ ] **"Specifications are indicative" notes** — keep (recommended) or remove
+- [x] **Logo & browser icon** — current `logo.jpeg` confirmed as the real logo
+- [x] **Home page big photo** — keep the stock photo (decided)
+- [x] **Home page headline & paragraph** — keep as is (decided)
+- [x] **Home page highlights** — "Free site inspection · 12 mo warranty · AMC plans" confirmed true
+- [x] **Google search title & description** (`index.html`) — keep current wording (decided)
+- [x] **Installation steps** (Services page, 8 steps) — keep as is (decided)
+- [x] **"Specifications are indicative" notes** — Products page line kept; product detail line always shown; "Note" row removed from product spec tables; note removed from projects
 - [ ] **Backup contact details** (`PublicLayout.tsx`) — update to real values after A1 is done
-- [ ] (Optional) **Google Maps location** on Contact page — send the Google Maps link
-- [ ] (Optional) **Social media links** — send Instagram / Facebook / YouTube links
+- [x] (Optional) **Google Maps location** on Contact page — not needed (decided)
+- [ ] (Optional) **Social media links** — send Instagram / Facebook / YouTube links when available
 
 ## C. Optional feature
 

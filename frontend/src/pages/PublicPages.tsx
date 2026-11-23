@@ -111,7 +111,7 @@ export function ProductDetailPage() {
 					<div className="rounded-xl border border-line bg-panel">
 						{p.specs.map((s) => <div key={s.label} className="flex justify-between border-b border-line px-4 py-2.5 text-sm last:border-0"><span className="text-steel">{s.label}</span><span>{s.value}</span></div>)}
 					</div>
-					{!p.specs_verified && <p className="text-xs text-steel">Specifications are indicative and will be confirmed by our engineers for your site.</p>}
+					<p className="text-xs text-steel">Specifications are indicative and will be confirmed by our engineers for your site.</p>
 					{list("Cabin designs", p.cabin_designs)}{list("Door types", p.door_types)}{list("Configurations", p.configurations)}{list("Accessories", p.accessories)}
 					<div className="flex flex-wrap gap-3">
 						<Link to={`/quote?lift=${encodeURIComponent(p.category)}`} className="gold-btn rounded-md px-6 py-3 text-sm font-semibold" data-testid="product-enquire-btn">Enquire about this lift</Link>

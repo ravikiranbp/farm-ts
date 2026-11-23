@@ -19,7 +19,6 @@ IMG = {
 	"home": "https://images.unsplash.com/photo-1616251414746-1ff204ed0318?w=1200&q=80",
 	"cabin": "https://images.pexels.com/photos/8243095/pexels-photo-8243095.jpeg?auto=compress&w=1200",
 }
-NOTE = "Indicative — to be verified by V Tech engineering"
 
 USERS = [
 	("Ravikiran P", "admin@vtech.in", "Admin@123", "admin"),
@@ -38,7 +37,7 @@ def product(i, name, cat, img, desc, cap, speed, floors, extra=None):
 			"door_types": ["Automatic centre opening", "Automatic telescopic"] + (extra or []),
 			"configurations": ["Machine-room-less (MRL)", "With machine room"], "accessories": ["ARD (auto rescue device)", "Intercom", "Overload indicator", "CCTV ready"],
 			"specs": [{"label": "Capacity", "value": cap}, {"label": "Speed", "value": speed},
-					  {"label": "Floors supported", "value": floors}, {"label": "Note", "value": NOTE}],
+					  {"label": "Floors supported", "value": floors}],
 			"created_at": iso_now(), "updated_at": iso_now()}
 
 
@@ -109,7 +108,7 @@ async def main():
 		await db.projects.insert_many([{"id": new_id(), "name": n, "location": loc, "building_type": bt, "lift_category": cat,
 										"floors": fl, "lifts_count": lc, "photos": [IMG[img], IMG["cabin"]],
 										"description": f"{lc} {cat.lower()} installed for a {bt.lower()} building with {fl} floors.",
-										"completion_date": d, "specs": NOTE, "testimonial": "", "published": True,
+										"completion_date": d, "specs": "", "testimonial": "", "published": True,
 										"permission_to_publish": True, "is_sample": True, "created_at": iso_now()}
 									   for n, loc, bt, cat, fl, lc, img, d in PROJECTS])
 	if not await db.faqs.count_documents({}):
