@@ -81,6 +81,18 @@ async def file_response(f: dict, download: bool = True) -> Response:
 	return Response(data, media_type=f["content_type"], headers=headers)
 
 
+async def delete_file(f: dict) -> None:
+	"""Remove the stored contents and the `files` record; a missing object is not an error."""
+	if USE_SUPABASE:
+		async with httpx.AsyncClient(timeout=30, verify=_TLS) as c:
+			r = await c.delete(_object_url(f["id"]), headers=_headers())
+		if r.status_code >= 300 and r.status_code not in (400, 404):
+			logger.error("Supabase delete %s failed (%s): %s", f["id"], r.status_code, r.text[:300])
+	else:
+		await asyncio.to_thread(_local_path(f).unlink, missing_ok=True)
+	await db.files.delete_one({"id": f["id"]})
+
+
 async def upload_local_files_to_storage() -> int:
 	"""Copy files present in backend/uploads/ but missing from Supabase. Safe to re-run."""
 	if not USE_SUPABASE:

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiGet, apiPatch, apiPost, apiPut, apiUpload } from "@/lib/api";
-import type { AuditEntry, GroupRow, Report, Settings, User } from "@/lib/types";
+import type { AuditEntry, GroupRow, OfferAdmin, Report, Settings, User } from "@/lib/types";
 import { LEAD_STATUSES, errMsg, fmtDateTime, inr } from "@/lib/format";
 import { Empty, Field, NSelect, PageHeader, Panel, Stat, StatusBadge } from "@/components/common";
 import { Input } from "@/components/ui/input";
@@ -223,12 +223,49 @@ function CmsTab({ kind }: { kind: string }) {
   );
 }
 
+function OfferTab() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["admin-offer"], queryFn: () => apiGet<OfferAdmin>("/admin/offer") });
+  const [want, setWant] = useState<boolean | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const on = want ?? Boolean(data?.enabled);
+  const pick = (f: File | null) => { if (preview) URL.revokeObjectURL(preview); setFile(f); setPreview(f ? URL.createObjectURL(f) : null); };
+  const done = (msg: string) => { toast.success(msg); pick(null); setWant(null); qc.invalidateQueries({ queryKey: ["admin-offer"] }); qc.invalidateQueries({ queryKey: ["public-content"] }); };
+  const post = useMutation({ mutationFn: () => { const fd = new FormData(); fd.append("file", file!); return apiUpload<OfferAdmin>("/admin/offer", fd); },
+    onSuccess: () => done("Offer overlay is live on the home page"), onError: (e) => toast.error(errMsg(e)) });
+  const remove = useMutation({ mutationFn: () => apiPost<OfferAdmin>("/admin/offer/remove"), onSuccess: () => done("Offer overlay removed"), onError: (e) => toast.error(errMsg(e)) });
+  const toggle = (v: boolean) => {
+    if (!v && data?.enabled) { if (confirm("Remove the offer overlay from the website?")) remove.mutate(); return; }
+    if (!v) pick(null);
+    setWant(v);
+  };
+  return (
+    <Panel>
+      <label className="flex items-center gap-2 text-sm"><Checkbox checked={on} onCheckedChange={(v) => toggle(Boolean(v))} data-testid="offer-enable-checkbox" />Show an offer overlay</label>
+      <p className="mt-1 text-xs text-steel">Shown once per visit on the home page, 2 s after it opens; closes after 10 s. Tapping it opens the enquiry form.</p>
+      {data?.enabled && data.image_url && <div className="mt-4"><p className="text-xs text-steel">Live now{data.posted_at ? ` · since ${fmtDateTime(data.posted_at)}` : ""}{data.posted_by ? ` · by ${data.posted_by}` : ""}</p>
+        <img src={data.image_url} alt="Live offer" className="mt-2 max-h-64 rounded border border-line object-contain" data-testid="offer-live-image" /></div>}
+      {on && <div className="mt-4 space-y-3">
+        <label className="inline-block cursor-pointer rounded-md border border-gold/50 px-3 py-1.5 text-sm text-champagne">{data?.enabled ? "Replace image" : "Choose image"}
+          <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => pick(e.target.files?.[0] ?? null)} data-testid="offer-file-input" /></label>
+        <span className="ml-2 text-xs text-steel">JPG, PNG or WEBP · max 5 MB</span>
+        {preview && <div><p className="text-xs text-steel">Preview — not live until you post</p>
+          <div className="mt-2 inline-block bg-black/70 p-4"><img src={preview} alt="Preview" className="max-h-72 object-contain" data-testid="offer-preview-image" /></div></div>}
+        <div><Button className="gold-btn" disabled={!file || post.isPending} onClick={() => post.mutate()} data-testid="offer-post-btn">{post.isPending ? "Posting…" : "Post"}</Button></div>
+      </div>}
+    </Panel>
+  );
+}
+
 export function ContentPage() {
   return (
     <div>
       <PageHeader title="Website content" subtitle="Changes appear on the public website immediately after publishing" />
-      <Tabs defaultValue="products"><TabsList className="flex-wrap">{Object.keys(CMS_FIELDS).map((k) => <TabsTrigger key={k} value={k} data-testid={`cms-tab-${k}`}>{k}</TabsTrigger>)}</TabsList>
-        {Object.keys(CMS_FIELDS).map((k) => <TabsContent key={k} value={k}><CmsTab kind={k} /></TabsContent>)}</Tabs>
+      <Tabs defaultValue="products"><TabsList className="flex-wrap">{Object.keys(CMS_FIELDS).map((k) => <TabsTrigger key={k} value={k} data-testid={`cms-tab-${k}`}>{k}</TabsTrigger>)}
+        <TabsTrigger value="offer" data-testid="cms-tab-offer">offer</TabsTrigger></TabsList>
+        {Object.keys(CMS_FIELDS).map((k) => <TabsContent key={k} value={k}><CmsTab kind={k} /></TabsContent>)}
+        <TabsContent value="offer"><OfferTab /></TabsContent></Tabs>
     </div>
   );
 }

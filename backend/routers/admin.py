@@ -5,6 +5,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -12,6 +13,7 @@ from fastapi.responses import Response
 from lib.auth import MGMT, current_user, require
 from lib.common import CLOSED_STATUSES, DEFAULT_SETTINGS, POSITIVE, audit, get_settings, iso_now, new_id
 from lib.db import client, db, ensure_indexes
+from lib.files import delete_file, store_file
 
 router = APIRouter()
 CMS = {"products": "name", "projects": "name", "testimonials": "name", "faqs": "question", "brochures": "title", "services": "title"}
@@ -106,6 +108,56 @@ async def cms_remove(kind: str, iid: str, user: dict = Depends(require("admin"))
 	await coll.update_one({"id": iid}, {"$set": {"published": False, "archived": True, "updated_at": iso_now()}})
 	await audit(user, "record_archived", f"cms:{kind}", record_id=iid, comment="Removed from public display")
 	return {"ok": True}
+
+
+# ---------------- Home-page offer overlay ----------------
+OFFER_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+OFFER_MAX_BYTES = 5 * 1024 * 1024
+
+
+async def _offer() -> dict:
+	return await db.settings.find_one({"id": "offer_overlay"}, {"_id": 0}) or {"id": "offer_overlay", "enabled": False}
+
+
+async def _drop_offer_image(file_id: str | None) -> None:
+	f = await db.files.find_one({"id": file_id}) if file_id else None
+	if f:
+		await delete_file(f)
+
+
+@router.get("/admin/offer")
+async def offer_get(user: dict = Depends(require("admin"))):
+	o = await _offer()
+	return {**o, "image_url": f"/api/public/files/{o['file_id']}" if o.get("file_id") else None}
+
+
+@router.post("/admin/offer")
+async def offer_post(file: UploadFile = File(...), user: dict = Depends(require("admin"))):
+	ext = Path(file.filename or "").suffix.lower()
+	if ext not in OFFER_TYPES:
+		raise HTTPException(400, "Use a JPG, PNG or WEBP image")
+	data = await file.read()
+	if len(data) > OFFER_MAX_BYTES:
+		raise HTTPException(400, "Image too large (max 5 MB)")
+	fid = new_id()
+	await store_file(fid, data, OFFER_TYPES[ext])
+	await db.files.insert_one({"id": fid, "name": Path(file.filename).name, "content_type": OFFER_TYPES[ext], "size": len(data),
+							   "entity_type": "offer", "entity_id": "offer_overlay", "public": True, "uploaded_by": user["name"], "at": iso_now()})
+	old = await _offer()
+	await db.settings.update_one({"id": "offer_overlay"}, {"$set": {"enabled": True, "file_id": fid, "posted_at": iso_now(),
+																	 "posted_by": user["name"]}}, upsert=True)
+	await _drop_offer_image(old.get("file_id"))
+	await audit(user, "offer_overlay_posted", "settings", new={"image": Path(file.filename).name})
+	return await offer_get(user)
+
+
+@router.post("/admin/offer/remove")
+async def offer_remove(user: dict = Depends(require("admin"))):
+	old = await _offer()
+	await db.settings.update_one({"id": "offer_overlay"}, {"$set": {"enabled": False, "file_id": None}}, upsert=True)
+	await _drop_offer_image(old.get("file_id"))
+	await audit(user, "offer_overlay_removed", "settings")
+	return await offer_get(user)
 
 
 # ---------------- Audit ----------------

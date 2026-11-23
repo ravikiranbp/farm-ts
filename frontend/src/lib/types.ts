@@ -133,10 +133,12 @@ export interface ServiceItem { id: string; title: string; description: string; p
 export interface Company {
 	company_name: string; tagline: string; city: string; address: string; phone: string; whatsapp: string; email: string; about: string;
 }
+export interface Offer { id: string; image_url: string }
 export interface PublicContent {
 	company: Company; products: Product[]; projects: Project[]; testimonials: Testimonial[]; faqs: Faq[];
-	brochures: Brochure[]; services: ServiceItem[];
+	brochures: Brochure[]; services: ServiceItem[]; offer?: Offer | null;
 }
+export interface OfferAdmin { enabled: boolean; file_id?: string | null; image_url?: string | null; posted_at?: string; posted_by?: string }
 
 export interface Settings extends Company {
 	gstin?: string; tax_pct: number; manager_max_quote_amount: number; manager_max_discount_pct: number;

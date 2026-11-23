@@ -16,8 +16,10 @@ PUB = {"published": True}
 async def content():
 	s = await get_settings()
 	proj = {"_id": 0}
+	offer = await db.settings.find_one({"id": "offer_overlay", "enabled": True}, {"_id": 0})
 	return {
 		"company": {k: s.get(k) for k in PUBLIC_SETTINGS},
+		"offer": {"id": offer["file_id"], "image_url": f"/api/public/files/{offer['file_id']}"} if offer else None,
 		"products": await db.products.find(PUB, proj).sort("order", 1).to_list(200),
 		"projects": await db.projects.find({**PUB, "permission_to_publish": True}, proj).sort("completion_date", -1).to_list(200),
 		"testimonials": await db.testimonials.find(PUB, proj).to_list(100),

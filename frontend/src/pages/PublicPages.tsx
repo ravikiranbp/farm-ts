@@ -7,7 +7,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import type { Brochure, EnquiryResult, Product, Project } from "@/lib/types";
 import { ISSUE_TYPES, errMsg, fmtDate } from "@/lib/format";
 import { FALLBACK_COMPANY, usePublicContent } from "@/components/PublicLayout";
-import EnquiryForm, { ConsentBox, Success } from "@/components/EnquiryForm";
+import EnquiryForm, { Success } from "@/components/EnquiryForm";
 import BrochureGate from "@/components/BrochureGate";
 import { Field, NSelect } from "@/components/common";
 import { Input } from "@/components/ui/input";
@@ -269,11 +269,10 @@ export function QuotePage() {
 
 export function ServiceRequestPage() {
 	const [f, setF] = useState({ name: "", mobile: "", email: "", address: "", lift_ref: "", issue_type: "Lift breakdown", description: "", priority: "Normal", preferred_time: "" });
-	const [consent, setConsent] = useState(false);
 	const [res, setRes] = useState<EnquiryResult | null>(null);
 	const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
-	const m = useMutation({ mutationFn: () => apiPost<EnquiryResult>("/public/service-requests", { ...f, email: f.email || null, consent }), onSuccess: setRes, onError: (e) => toast.error(errMsg(e)) });
-	const submit = (e: FormEvent) => { e.preventDefault(); if (!consent) return toast.error("Please accept the consent note"); m.mutate(); };
+	const m = useMutation({ mutationFn: () => apiPost<EnquiryResult>("/public/service-requests", { ...f, email: f.email || null }), onSuccess: setRes, onError: (e) => toast.error(errMsg(e)) });
+	const submit = (e: FormEvent) => { e.preventDefault(); m.mutate(); };
 	return (
 		<>
 			<Hero over="Service & breakdown" title="Raise a service request" text="For emergencies (someone trapped), call us immediately as well." />
@@ -289,7 +288,6 @@ export function ServiceRequestPage() {
 							<Field label="Priority"><NSelect value={f.priority} onChange={set("priority")} options={["Low", "Normal", "High", "Emergency"]} data-testid="sr-priority-select" /></Field>
 							<Field label="Email"><Input type="email" value={f.email} onChange={set("email")} data-testid="sr-email-input" /></Field>
 							<Field label="Issue description" required className="sm:col-span-2"><Textarea rows={4} value={f.description} onChange={set("description")} required minLength={5} data-testid="sr-description-input" /></Field>
-							<div className="sm:col-span-2"><ConsentBox checked={consent} onChange={setConsent} /></div>
 							<Button type="submit" disabled={m.isPending} className="gold-btn h-11 sm:col-span-2" data-testid="sr-submit-btn">{m.isPending ? "Submitting…" : "Submit service request"}</Button>
 						</form>
 					)}

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, ShieldCheck, Wrench, ClipboardCheck, Clock } from "lucide-react";
 import { usePublicContent } from "@/components/PublicLayout";
 import EnquiryForm from "@/components/EnquiryForm";
+import OfferOverlay from "@/components/OfferOverlay";
 
 const HERO = "https://images.unsplash.com/photo-1573358575417-a421c842be5a?w=1600&q=80";
 
@@ -11,6 +12,7 @@ export default function Home() {
   const projects = data?.projects ?? [];
   return (
     <div>
+      <OfferOverlay offer={data?.offer} />
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_20%,rgba(214,162,58,0.14),transparent_55%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1.1fr_1fr] lg:py-24">

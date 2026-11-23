@@ -14,7 +14,7 @@ export const ORDER_STAGES = ["Order Confirmed", "Advance Payment Received", "Sit
 export const BUILDING_TYPES = ["Residential", "Apartment", "Commercial", "Hospital", "Hotel", "Industrial", "Other"];
 export const REQUIREMENTS = ["New lift installation", "Existing lift replacement", "Lift modernization", "Lift maintenance", "Lift repair", "Other"];
 export const CONSTRUCTION = ["Planning stage", "Under construction", "Building completed"];
-export const SOURCES = ["Company website", "Brochure download", "Google Business Profile", "Google search", "WhatsApp",
+export const SOURCES = ["Company website", "Website offer", "Brochure download", "Google Business Profile", "Google search", "WhatsApp",
 	"Phone call", "Social media", "Referral", "Existing customer", "Advertisement", "Manual entry", "Other"];
 export const LIFT_TYPES = ["Passenger lifts", "Home elevators", "Hospital lifts", "Goods lifts", "Commercial lifts",
 	"Capsule lifts", "Hydraulic lifts", "Machine-room / MRL lifts", "Lift modernization and replacement", "Customized solution"];

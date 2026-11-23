@@ -93,16 +93,9 @@ class EnquiryIn(BaseModel):
 	brochure_id: Optional[str] = None
 	source: Optional[str] = None
 	campaign: Optional[str] = None
-	consent: bool
+	consent: bool = True
 	_m = field_validator("mobile")(lambda cls, v: _mobile(v))
 	_e = field_validator("email")(lambda cls, v: _email(v))
-
-	@field_validator("consent")
-	@classmethod
-	def _c(cls, v: bool) -> bool:
-		if not v:
-			raise ValueError("Please accept that your details will be shared with V Tech Elevators")
-		return v
 
 
 class EnquiryResult(BaseModel):

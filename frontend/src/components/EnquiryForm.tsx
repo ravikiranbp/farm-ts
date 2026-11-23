@@ -10,18 +10,8 @@ import { Field, NSelect } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 
 export type EnquiryType = "enquiry" | "callback" | "inspection" | "brochure";
-
-export function ConsentBox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-	return (
-		<label className="flex items-start gap-2.5 text-xs text-steel">
-			<Checkbox checked={checked} onCheckedChange={(v) => onChange(Boolean(v))} data-testid="consent-checkbox" className="mt-0.5" />
-			<span>I agree that my details will be shared with V Tech Elevators so they can respond to my enquiry and follow up. They will not be used for unrelated marketing.</span>
-		</label>
-	);
-}
 
 export function Success({ result, onReset }: { result: EnquiryResult; onReset?: () => void }) {
 	return (
@@ -41,23 +31,22 @@ const EMPTY = { name: "", mobile: "", email: "", city: "Bengaluru", area: "", ad
 
 export default function EnquiryForm({ type, compact }: { type: EnquiryType; compact?: boolean }) {
 	const [sp] = useSearchParams();
-	const [f, setF] = useState({ ...EMPTY, lift_type: sp.get("lift") ?? "" });
-	const [consent, setConsent] = useState(false);
+	const fromOffer = sp.get("offer") === "1";
+	const [f, setF] = useState({ ...EMPTY, lift_type: sp.get("lift") ?? "", additional_requirements: fromOffer ? "Enquiry about Offer" : "" });
 	const [result, setResult] = useState<EnquiryResult | null>(null);
 	const set = (k: keyof typeof EMPTY) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
 	const m = useMutation({
 		mutationFn: () => apiPost<EnquiryResult>("/public/enquiries", {
-			...f, enquiry_type: type, consent, email: f.email || null,
+			...f, enquiry_type: type, email: f.email || null,
 			floors: f.floors ? Number(f.floors) : null, lifts_count: f.lifts_count ? Number(f.lifts_count) : null,
-			source: sp.get("utm_source") ?? undefined, campaign: sp.get("utm_campaign") ?? undefined,
+			source: sp.get("utm_source") ?? (fromOffer ? "Website offer" : undefined), campaign: sp.get("utm_campaign") ?? undefined,
 		}),
-		onSuccess: (r) => { setResult(r); setF(EMPTY); setConsent(false); },
+		onSuccess: (r) => { setResult(r); setF(EMPTY); },
 		onError: (e) => toast.error(errMsg(e)),
 	});
 	const submit = (e: FormEvent) => {
 		e.preventDefault();
 		if (!/^[6-9]\d{9}$/.test(f.mobile.replace(/\D/g, "").slice(-10))) return toast.error("Enter a valid 10-digit mobile number");
-		if (!consent) return toast.error("Please accept the consent note to continue");
 		m.mutate();
 	};
 	if (result) return <Success result={result} onReset={() => setResult(null)} />;
@@ -83,7 +72,6 @@ export default function EnquiryForm({ type, compact }: { type: EnquiryType; comp
 			</>}
 			<Field label="Preferred callback time"><NSelect value={f.preferred_callback_time} onChange={set("preferred_callback_time")} options={["Morning (9–12)", "Afternoon (12–4)", "Evening (4–7)", "Anytime"]} placeholder="Select" data-testid="enquiry-callback-select" /></Field>
 			{type !== "callback" && <Field label="Additional requirements" className="sm:col-span-2"><Textarea rows={3} value={f.additional_requirements} onChange={set("additional_requirements")} data-testid="enquiry-notes-input" /></Field>}
-			<div className="sm:col-span-2"><ConsentBox checked={consent} onChange={setConsent} /></div>
 			<Button type="submit" disabled={m.isPending} className="gold-btn h-11 font-semibold sm:col-span-2" data-testid="enquiry-submit-btn">
 				{m.isPending ? "Submitting…" : type === "callback" ? "Request callback" : type === "inspection" ? "Book free site inspection" : "Submit enquiry"}
 			</Button>
