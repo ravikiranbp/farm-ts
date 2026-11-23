@@ -3,6 +3,7 @@ else backend/uploads/ (local dev / single VPS). MongoDB holds only the metadata 
 import asyncio
 import logging
 import os
+import ssl
 from pathlib import Path
 from urllib.parse import quote
 
@@ -12,7 +13,7 @@ from fastapi.responses import Response
 
 from lib.db import db  # also loads backend/.env before the settings below are read
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/").removesuffix("/rest/v1")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
 SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "files").strip()
 USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
@@ -21,6 +22,8 @@ if (os.environ.get("RENDER") or os.environ.get("K_SERVICE")) and not USE_SUPABAS
 	raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set: this host's disk is wiped on every restart")
 
 logger = logging.getLogger(__name__)
+# OS trust store (not certifi) so it also works behind corporate TLS inspection on Windows.
+_TLS = ssl.create_default_context()
 
 
 def _headers(extra: dict | None = None) -> dict:
@@ -40,7 +43,7 @@ def _local_path(f: dict) -> Path:
 
 
 async def _upload(fid: str, data: bytes, content_type: str, upsert: bool) -> httpx.Response:
-	async with httpx.AsyncClient(timeout=60) as c:
+	async with httpx.AsyncClient(timeout=60, verify=_TLS) as c:
 		return await c.post(_object_url(fid), content=data,
 							headers=_headers({"Content-Type": content_type, "x-upsert": "true" if upsert else "false"}))
 
@@ -58,7 +61,7 @@ async def store_file(fid: str, data: bytes, content_type: str) -> None:
 
 async def _load(f: dict) -> bytes | None:
 	if USE_SUPABASE:
-		async with httpx.AsyncClient(timeout=60) as c:
+		async with httpx.AsyncClient(timeout=60, verify=_TLS) as c:
 			r = await c.get(_object_url(f["id"]), headers=_headers())
 		if r.status_code == 200:
 			return r.content
@@ -101,7 +104,7 @@ async def storage_ping() -> bool:
 	"""Cheap Supabase call; a scheduled hit keeps the free project from pausing for inactivity."""
 	if not USE_SUPABASE:
 		return False
-	async with httpx.AsyncClient(timeout=30) as c:
+	async with httpx.AsyncClient(timeout=30, verify=_TLS) as c:
 		r = await c.post(f"{SUPABASE_URL}/storage/v1/object/list/{SUPABASE_BUCKET}",
 						 json={"prefix": "", "limit": 1}, headers=_headers())
 	return r.status_code == 200
