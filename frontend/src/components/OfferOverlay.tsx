@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import type { Offer } from "@/lib/types";
 
 const SEEN_KEY = "vt_offer_seen";
-const SHOW_AFTER_MS = 2000;
+const SHOW_AFTER_MS = 500;
 const AUTO_CLOSE_MS = 10000;
 
 // Image-only popup on the home page, shown once per browser session for each posted image.

@@ -266,7 +266,7 @@ function OfferTab() {
   return (
     <Panel>
       <label className="flex items-center gap-2 text-sm"><Checkbox checked={on} onCheckedChange={(v) => toggle(Boolean(v))} data-testid="offer-enable-checkbox" />Show an offer overlay</label>
-      <p className="mt-1 text-xs text-steel">Shown once per visit on the home page, 2 s after it opens; closes after 10 s. Tapping it opens the enquiry form.</p>
+      <p className="mt-1 text-xs text-steel">Shown once per visit on the home page, 0.5 s after it opens; closes after 10 s. Tapping it opens the enquiry form.</p>
       {data?.enabled && data.image_url && <div className="mt-4"><p className="text-xs text-steel">Live now{data.posted_at ? ` · since ${fmtDateTime(data.posted_at)}` : ""}{data.posted_by ? ` · by ${data.posted_by}` : ""}</p>
         <img src={data.image_url} alt="Live offer" className="mt-2 max-h-64 rounded border border-line object-contain" data-testid="offer-live-image" /></div>}
       {on && <div className="mt-4 space-y-3">
