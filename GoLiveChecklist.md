@@ -62,6 +62,8 @@ Shown on the website (Contact page, footer, WhatsApp button) and on quotation / 
 
 - [x] **Upload photos for projects** (products keep image links) — Website Content → projects → Upload photos
 - [x] **Auto-retry in Cloudflare proxy** — waits up to ~30 s while Render wakes up / restarts instead of showing 502
+- [x] **Quotation upgrade** — 5-tab form, Quotation defaults page (admin/manager), 6-page official PDF, Preview / Download / Email
+- [ ] Review **Quotations → Quotation defaults** (cover letter, specs, 40/55/5 payment schedule, clauses, materials) and adjust wording
 
 ---
 
