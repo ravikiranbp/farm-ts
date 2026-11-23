@@ -64,6 +64,9 @@ export interface Inspection {
 }
 
 export interface QuoteItem { description: string; qty: number; unit_price: number }
+export interface SpecRow { key: string; label: string; value: string }
+export interface PayRow { pct: number; description: string }
+export interface MaterialRow { category: string; detail: string }
 export interface QuoteTotals { items_total: number; subtotal: number; discount: number; taxable: number; tax: number; total: number }
 export interface QuoteFields {
 	project_address?: string | null; lift_category?: string | null; capacity?: string | null; floors?: number | null;
@@ -72,6 +75,19 @@ export interface QuoteFields {
 	discount_pct: number; tax_pct: number; payment_terms?: string | null; delivery_timeline?: string | null;
 	installation_timeline?: string | null; warranty?: string | null; amc_info?: string | null; terms?: string | null;
 	valid_until?: string | null;
+	customer_name?: string | null; customer_mobile?: string | null; customer_email?: string | null; customer_address?: string | null;
+	quote_date?: string | null; cover_subject?: string | null; cover_body?: string[] | null; cover_points?: string[] | null;
+	cover_closing?: string | null; tech_specs?: SpecRow[] | null; payment_schedule?: PayRow[] | null; price_note?: string | null;
+	builder_side_work?: string[] | null; contract_conditions?: string[] | null; preparatory_intro?: string | null;
+	preparatory_work?: string[] | null; builder_intro?: string | null; builder_work?: string[] | null;
+	materials?: MaterialRow[] | null; materials_note?: string | null;
+}
+export interface QuoteDefaults {
+	cover_subject: string; cover_body: string[]; cover_points: string[]; cover_closing: string; tech_specs: SpecRow[];
+	price_description: string; payment_schedule: PayRow[]; delivery_timeline: string; installation_timeline: string;
+	warranty: string; price_note: string; builder_side_work: string[]; contract_conditions: string[]; preparatory_intro: string;
+	preparatory_work: string[]; builder_intro: string; builder_work: string[]; material_catalog: Record<string, string[]>;
+	materials: MaterialRow[]; materials_note: string;
 }
 export interface Quotation extends QuoteFields {
 	id: string; number: string; revision: number; status: string; lead_id?: string | null; lead_ref?: string | null;

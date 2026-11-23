@@ -281,9 +281,45 @@ class QuoteItem(BaseModel):
 	unit_price: float = Field(default=0, ge=0)
 
 
+class SpecRow(BaseModel):
+	key: str
+	label: str
+	value: str = ""
+
+
+class PayRow(BaseModel):
+	pct: float = Field(default=0, ge=0, le=100)
+	description: str = ""
+
+
+class MaterialRow(BaseModel):
+	category: str = ""
+	detail: str = ""
+
+
 class QuotationIn(BaseModel):
 	lead_id: Optional[str] = None
 	inspection_id: Optional[str] = None
+	customer_name: Optional[str] = None
+	customer_mobile: Optional[str] = None
+	customer_email: Optional[str] = None
+	customer_address: Optional[str] = None
+	quote_date: Optional[str] = None
+	cover_subject: Optional[str] = None
+	cover_body: Optional[list[str]] = None
+	cover_points: Optional[list[str]] = None
+	cover_closing: Optional[str] = None
+	tech_specs: Optional[list[SpecRow]] = None
+	payment_schedule: Optional[list[PayRow]] = None
+	price_note: Optional[str] = None
+	builder_side_work: Optional[list[str]] = None
+	contract_conditions: Optional[list[str]] = None
+	preparatory_intro: Optional[str] = None
+	preparatory_work: Optional[list[str]] = None
+	builder_intro: Optional[str] = None
+	builder_work: Optional[list[str]] = None
+	materials: Optional[list[MaterialRow]] = None
+	materials_note: Optional[str] = None
 	project_address: Optional[str] = None
 	lift_category: Optional[str] = None
 	capacity: Optional[str] = None
@@ -323,6 +359,24 @@ class Quotation(Flexible):
 	customer_id: str
 	customer_name: str
 	customer_mobile: Optional[str] = None
+	customer_email: Optional[str] = None
+	customer_address: Optional[str] = None
+	quote_date: Optional[str] = None
+	cover_subject: Optional[str] = None
+	cover_body: Optional[list[str]] = None
+	cover_points: Optional[list[str]] = None
+	cover_closing: Optional[str] = None
+	tech_specs: Optional[list[dict]] = None
+	payment_schedule: Optional[list[dict]] = None
+	price_note: Optional[str] = None
+	builder_side_work: Optional[list[str]] = None
+	contract_conditions: Optional[list[str]] = None
+	preparatory_intro: Optional[str] = None
+	preparatory_work: Optional[list[str]] = None
+	builder_intro: Optional[str] = None
+	builder_work: Optional[list[str]] = None
+	materials: Optional[list[dict]] = None
+	materials_note: Optional[str] = None
 	project_address: Optional[str] = None
 	lift_category: Optional[str] = None
 	capacity: Optional[str] = None
