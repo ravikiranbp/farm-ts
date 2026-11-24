@@ -47,10 +47,13 @@ export function QuotationNew() {
   const { data } = useQuery({ queryKey: ["lead", leadId], queryFn: () => apiGet<{ lead: Lead }>(`/leads/${leadId}`), enabled: !!leadId });
   const { data: s } = useQuery({ queryKey: ["settings"], queryFn: () => apiGet<Settings>("/settings") });
   const { data: d } = useQuoteDefaults(!!leadId);
+  const { data: nextNo } = useQuery({ queryKey: ["quote-next-number"], queryFn: () => apiGet<{ number: string }>("/quotations/next-number"), enabled: !!leadId, gcTime: 0 });
+  // An untouched suggestion is omitted so the server assigns a fresh one if someone else took it meanwhile.
+  const create = (f: QuoteFields) => m.mutate(f.number?.trim() && f.number.trim() !== nextNo?.number ? f : { ...f, number: null });
   const m = useMutation({ mutationFn: (f: QuoteFields) => apiPost<Quotation>("/quotations", { ...f, lead_id: leadId }), onSuccess: (q) => { toast.success(`Quotation ${q.number} created`); nav(`/staff/quotations/${q.id}`, { replace: true }); }, onError: (e) => toast.error(errMsg(e)) });
   const l = data?.lead;
   const init = useMemo<QuoteFields | null>(() => {
-    if (!l || !d || !s) return null;
+    if (!l || !d || !s || !nextNo) return null;
     const floors = l.floors ?? null;
     const lifts = l.lifts_count ?? 1;
     const specs = d.tech_specs.map((r) => {
@@ -59,6 +62,7 @@ export function QuotationNew() {
       return { ...r };
     });
     const base: QuoteFields = {
+      number: nextNo.number,
       items: [{ description: d.price_description, qty: lifts, unit_price: 0 }], installation_charges: 0, transport_charges: 0,
       additional_charges: 0, discount_pct: 0, tax_pct: s.tax_pct ?? 18, lift_category: l.lift_type ?? "", floors, stops: floors,
       lifts_count: lifts, project_address: [l.address, l.area, l.city].filter(Boolean).join(", "),
@@ -66,11 +70,11 @@ export function QuotationNew() {
       customer_address: [l.address, l.area, l.city].filter(Boolean).join("\n"), quote_date: new Date().toISOString().slice(0, 10),
     };
     return { ...withDefaults(base, d), tech_specs: specs };
-  }, [l, d, s]);
+  }, [l, d, s, nextNo]);
   if (!leadId) return <p className="text-steel">Open a lead and click "Create quotation".</p>;
   return (<div><PageHeader title="New quotation" subtitle={l ? `${l.name} · ${l.ref}` : "Loading lead…"}
     actions={<Link to="/staff/quotations/defaults" className="rounded-md border border-line px-3 py-1.5 text-sm hover:border-gold">Quotation defaults</Link>} />
-    {init ? <QuoteForm initial={init} catalog={d?.material_catalog ?? {}} onSave={(f) => m.mutate(f)} saving={m.isPending} /> : <p className="text-steel">Loading…</p>}</div>);
+    {init ? <QuoteForm initial={init} catalog={d?.material_catalog ?? {}} onSave={create} saving={m.isPending} /> : <p className="text-steel">Loading…</p>}</div>);
 }
 
 async function emailQuote(q: Quotation, me: User) {
@@ -93,7 +97,7 @@ async function emailQuote(q: Quotation, me: User) {
 }
 
 function diff(a: QuotationRevision, b: QuotationRevision): string[] {
-  const keys: (keyof QuoteFields)[] = ["lift_category", "capacity", "floors", "stops", "lifts_count", "installation_charges", "transport_charges", "additional_charges", "discount_pct", "tax_pct", "valid_until", "payment_terms", "warranty"];
+  const keys: (keyof QuoteFields)[] = ["number", "lift_category", "capacity", "floors", "stops", "lifts_count", "installation_charges", "transport_charges", "additional_charges", "discount_pct", "tax_pct", "valid_until", "payment_terms", "warranty"];
   const out = keys.filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => `${k.replace(/_/g, " ")}: ${a[k] ?? "—"} → ${b[k] ?? "—"}`);
   if (JSON.stringify(a.items) !== JSON.stringify(b.items)) out.push(`line items changed (${a.items.length} → ${b.items.length})`);
   for (const [k, label] of [["tech_specs", "technical specifications"], ["payment_schedule", "payment schedule"], ["materials", "materials"], ["builder_side_work", "builder side work"], ["contract_conditions", "conditions"], ["preparatory_work", "preparatory work"], ["builder_work", "work by builder"]] as [keyof QuoteFields, string][])

@@ -69,6 +69,7 @@ export interface PayRow { pct: number; description: string }
 export interface MaterialRow { category: string; detail: string }
 export interface QuoteTotals { items_total: number; subtotal: number; discount: number; taxable: number; tax: number; total: number }
 export interface QuoteFields {
+	number?: string | null;
 	project_address?: string | null; lift_category?: string | null; capacity?: string | null; floors?: number | null;
 	stops?: number | null; lifts_count?: number | null; technical_config?: string | null; product_description?: string | null;
 	items: QuoteItem[]; installation_charges: number; transport_charges: number; additional_charges: number;

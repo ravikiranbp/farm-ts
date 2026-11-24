@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
+from pymongo.errors import DuplicateKeyError
 
 from lib.auth import MGMT, current_user, is_mgmt, require
 from lib.common import ORDER_STAGES, audit, clean, get_settings, iso_now, new_id, next_ref, norm_iso, notify
@@ -141,6 +142,63 @@ async def with_quote_defaults(q: dict) -> dict:
 	return {**q, **{k: defaults[k] for k in PER_QUOTE_KEYS if q.get(k) is None}}
 
 
+_LAST_DIGITS = re.compile(r"(\d+)(?!.*\d)")
+
+
+def _bump(number: str) -> str:
+	m = _LAST_DIGITS.search(number)
+	if not m:
+		return f"{number}-1"
+	n = m.group(1)
+	return number[:m.start()] + str(int(n) + 1).zfill(len(n)) + number[m.end():]
+
+
+def _seq(number: str) -> int:
+	m = _LAST_DIGITS.search(number or "")
+	return int(m.group(1)) if m else -1
+
+
+async def _last_quote_number() -> str | None:
+	doc = await db.counters.find_one({"_id": "quotation_number"})
+	if doc and doc.get("last"):
+		return doc["last"]
+	latest = await db.quotations.find_one({}, {"_id": 0, "number": 1}, sort=[("created_at", -1)])
+	return latest["number"] if latest else None
+
+
+async def next_quote_number() -> str:
+	last = await _last_quote_number()
+	if not last:
+		year = datetime.now(timezone.utc).year
+		c = await db.counters.find_one({"_id": f"QTN-{year}"}) or {}
+		last = f"QTN-{year}-{int(c.get('n', 0)):04d}"
+	cand = _bump(last)
+	while await db.quotations.find_one({"number": cand}, {"_id": 1}):
+		cand = _bump(cand)
+	return cand
+
+
+async def _remember_number(number: str):
+	last = await _last_quote_number()
+	if last is None or _seq(number) > _seq(last):
+		await db.counters.update_one({"_id": "quotation_number"}, {"$set": {"last": number}}, upsert=True)
+
+
+async def _check_number(number: str, own_id: str | None = None) -> str:
+	number = (number or "").strip()
+	if not number or len(number) > 40:
+		raise HTTPException(400, "Quotation number is required (max 40 characters)")
+	clash = await db.quotations.find_one({"number": number, "id": {"$ne": own_id}}, {"_id": 0, "id": 1})
+	if clash:
+		raise HTTPException(409, f"Quotation number {number} is already used")
+	return number
+
+
+@router.get("/quotations/next-number")
+async def get_next_quote_number(user: dict = Depends(require(*MGMT))):
+	return {"number": await next_quote_number()}
+
+
 async def snapshot(q: dict):
 	snap = {k: v for k, v in q.items() if k not in ("_id", "approval_history", "negotiation_notes", "share", "view_count",
 													 "first_viewed_at", "last_viewed_at", "customer_responses")}
@@ -167,6 +225,7 @@ async def create_quotation(body: QuotationIn, user: dict = Depends(require(*MGMT
 	s = await get_settings()
 	defaults = await get_quote_defaults()
 	data = body.model_dump(exclude={"change_note"})
+	number = await _check_number(data.pop("number")) if body.number else await next_quote_number()
 	data["items"] = [i for i in data["items"] if i["description"].strip()]
 	for k in PER_QUOTE_KEYS:
 		if data.get(k) is None:
@@ -183,11 +242,15 @@ async def create_quotation(body: QuotationIn, user: dict = Depends(require(*MGMT
 	data["quote_date"] = data.get("quote_date") or today_iso()
 	derive_summary(data)
 	now = iso_now()
-	q = {"id": new_id(), "number": await next_ref("QTN"), "revision": 1, "status": "Draft", "lead_ref": lead["ref"],
-		 "customer_id": lead["customer_id"], **data,
+	q = {"id": new_id(), "number": number, "revision": 1, "status": "Draft", "lead_ref": lead["ref"],
+		 "customer_id": lead["customer_id"], **{k: v for k, v in data.items() if k != "number"},
 		 "totals": compute_totals(data), "approval_history": [], "negotiation_notes": [], "created_by": user["id"],
 		 "created_by_name": user["name"], "order_id": None, "created_at": now, "updated_at": now}
-	await db.quotations.insert_one(dict(q))
+	try:
+		await db.quotations.insert_one(dict(q))
+	except DuplicateKeyError:
+		raise HTTPException(409, f"Quotation number {number} was just taken — please save again")
+	await _remember_number(number)
 	await snapshot(q)
 	await audit(user, "quotation_created", "quotations", record_ref=q["number"], record_id=q["id"],
 				new={"total": q["totals"]["total"]}, customer_id=q["customer_id"], lead_id=lead["id"])
@@ -216,9 +279,11 @@ async def edit_quotation(qid: str, body: QuotationIn, user: dict = Depends(requi
 	q = with_expiry(q)
 	if q["status"] in ("Accepted",):
 		raise HTTPException(400, "Accepted quotations cannot be changed")
-	sent = body.model_dump(exclude={"lead_id", "inspection_id", "change_note"}, exclude_unset=True)
-	keep = {k: q.get(k) for k in QuotationIn.model_fields if k not in ("lead_id", "inspection_id", "change_note")}
+	sent = body.model_dump(exclude={"lead_id", "inspection_id", "change_note", "number"}, exclude_unset=True)
+	keep = {k: q.get(k) for k in QuotationIn.model_fields if k not in ("lead_id", "inspection_id", "change_note", "number")}
 	data = {**keep, **{k: v for k, v in sent.items() if v is not None or k not in keep}}
+	if body.number and body.number.strip() != q["number"]:
+		data["number"] = await _check_number(body.number, qid)
 	data["items"] = [i for i in data.get("items") or [] if i["description"].strip()]
 	derive_summary(data)
 	data["totals"] = compute_totals(data)
@@ -234,6 +299,8 @@ async def edit_quotation(qid: str, body: QuotationIn, user: dict = Depends(requi
 	data["updated_at"] = now
 	data["last_change_note"] = body.change_note
 	await db.quotations.update_one({"id": qid}, {"$set": data})
+	if "number" in data:
+		await _remember_number(data["number"])
 	new = await db.quotations.find_one({"id": qid}, {"_id": 0})
 	await snapshot(new)
 	await audit(user, action, "quotations", record_ref=f"{q['number']} R{new['revision']}", record_id=qid,

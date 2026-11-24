@@ -165,7 +165,8 @@ export function QuoteForm({ initial, catalog, meta, onSave, saving, isIssued }: 
 
         <TabsContent value="customer"><Panel>
           <div className="grid gap-3 sm:grid-cols-3">
-            {meta?.number && <Field label="Quotation / Reference No."><Input readOnly value={`${meta.number} · Revision ${meta.revision}`} /></Field>}
+            <Field label="Quotation / Reference No."><Input value={f.number ?? ""} onChange={set("number")} placeholder="e.g. VT-0759" data-testid="q-number-input" />
+              <p className="mt-1 text-xs text-steel">{meta?.revision ? `Revision ${meta.revision} · ` : ""}New quotations continue +1 from the highest number used.</p></Field>
             {meta?.status && <Field label="Status"><Input readOnly value={meta.status} /></Field>}
             <Field label="Quotation date"><Input type="date" value={f.quote_date ?? ""} onChange={set("quote_date")} data-testid="q-date-input" /></Field>
             <Field label="Valid until"><Input type="date" value={f.valid_until ?? ""} onChange={set("valid_until")} data-testid="q-valid-input" /></Field>
