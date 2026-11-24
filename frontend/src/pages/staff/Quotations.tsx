@@ -140,7 +140,8 @@ export function QuotationDetail() {
   const { id = "" } = useParams();
   const me = useOutletContext<User>();
   const qc = useQueryClient();
-  const [editing, setEditing] = useState(false);
+  const [sp] = useSearchParams();
+  const [editing, setEditing] = useState(sp.get("edit") === "1" && me.role !== "telecaller");
   const [action, setAction] = useState<null | { action: string; comment: string }>(null);
   const { data, isLoading, error } = useQuery({ queryKey: ["quotation", id], queryFn: () => apiGet<{ quotation: Quotation; revisions: QuotationRevision[]; views: QuoteView[] }>(`/quotations/${id}`) });
   const refresh = () => { qc.invalidateQueries({ queryKey: ["quotation", id] }); qc.invalidateQueries({ queryKey: ["quotations"] }); };

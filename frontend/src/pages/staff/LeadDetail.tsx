@@ -68,6 +68,8 @@ export default function LeadDetail() {
   const canDecide = mgmt && ap?.state === "pending" && (ap.submitted_by !== me.id || me.role === "admin");
   const statusOpts = LEAD_STATUSES.filter((s) => s !== "Positive – Awaiting Manager Approval" && (me.role === "admin" || s !== "Approved") && (mgmt || !TELECALLER_BLOCKED.includes(s)));
   const e = edit ?? {};
+  // Rejected/expired quotations don't block starting a fresh one.
+  const activeQ = [...data.quotations].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).find((q) => !(["Rejected", "Expired"].includes(q.status)));
   const setE = (k: keyof Lead) => (ev: { target: { value: string } }) => setEdit({ ...e, [k]: ["floors", "lifts_count"].includes(k) ? (ev.target.value ? Number(ev.target.value) : null) : ev.target.value });
 
   return (
@@ -78,7 +80,15 @@ export default function LeadDetail() {
           <a href={`https://wa.me/91${l.mobile}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm hover:border-gold" data-testid="whatsapp-customer-btn"><MessageCircle className="h-4 w-4" />WhatsApp</a>
           <Button variant="outline" onClick={() => setEdit({ name: l.name, email: l.email, city: l.city, area: l.area, address: l.address, building_type: l.building_type, requirement: l.requirement, floors: l.floors, lifts_count: l.lifts_count, construction_status: l.construction_status, lift_type: l.lift_type, additional_requirements: l.additional_requirements, preferred_callback_time: l.preferred_callback_time, source: l.source })} data-testid="edit-lead-btn">Edit</Button>
           {ap?.state !== "pending" && !["Won", "Approved"].includes(l.status) && <Button className="gold-btn" onClick={() => setPos({ lift_type: l.lift_type ?? "", floors: String(l.floors ?? ""), lifts_count: String(l.lifts_count ?? 1), requirement_summary: l.requirement ?? "", notes: "" })} data-testid="submit-positive-btn">Submit positive lead</Button>}
-          {mgmt && <Button variant="outline" onClick={() => nav(`/staff/quotations/new?lead=${l.id}`)} data-testid="create-quotation-btn">Create quotation</Button>}
+          {mgmt && (activeQ ? (
+            <div className="flex items-center gap-3 rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-1.5" data-testid="quotation-created-box">
+              <div className="leading-tight">
+                <p className="text-sm font-semibold text-emerald-300">Quotation created</p>
+                <p className="text-xs text-steel">{activeQ.number} R{activeQ.revision} · {activeQ.status} · {inr(activeQ.totals.total)}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => nav(`/staff/quotations/${activeQ.id}${activeQ.status === "Accepted" ? "" : "?edit=1"}`)} data-testid="edit-quotation-btn">{activeQ.status === "Accepted" ? "View quotation" : "Edit quotation"}</Button>
+            </div>
+          ) : <Button variant="outline" onClick={() => nav(`/staff/quotations/new?lead=${l.id}`)} data-testid="create-quotation-btn">Create quotation</Button>)}
         </>} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
