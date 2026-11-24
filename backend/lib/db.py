@@ -31,6 +31,7 @@ INDEXES: dict[str, list[IndexModel]] = {
 	"followups": [IndexModel([("id", ASCENDING)], name="id"), IndexModel([("lead_id", ASCENDING)], name="lead"),
 				  IndexModel([("done", ASCENDING), ("assigned_to", ASCENDING), ("due_at", ASCENDING)], name="due")],
 	"quotations": [IndexModel([("id", ASCENDING)], name="id", unique=True), IndexModel([("lead_id", ASCENDING)], name="lead"),
+				   IndexModel([("number", ASCENDING)], name="number", unique=True),
 				   IndexModel([("customer_id", ASCENDING)], name="customer"), IndexModel([("share.token", ASCENDING)], name="share_token", sparse=True)],
 	"quotation_views": [IndexModel([("quotation_id", ASCENDING), ("at", DESCENDING)], name="q_at")],
 	"quotation_revisions": [IndexModel([("quotation_id", ASCENDING), ("revision", ASCENDING)], name="qrev", unique=True)],

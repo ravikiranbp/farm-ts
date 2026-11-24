@@ -300,6 +300,7 @@ class MaterialRow(BaseModel):
 class QuotationIn(BaseModel):
 	lead_id: Optional[str] = None
 	inspection_id: Optional[str] = None
+	number: Optional[str] = None
 	customer_name: Optional[str] = None
 	customer_mobile: Optional[str] = None
 	customer_email: Optional[str] = None
