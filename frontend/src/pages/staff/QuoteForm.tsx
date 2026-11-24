@@ -76,20 +76,31 @@ export function MaterialsEditor({ rows, catalog, onChange }: { rows: UiMaterial[
   const cats = Object.keys(catalog);
   const set = (i: number, patch: Partial<UiMaterial>) => onChange(rows.map((r, j) => j === i ? { ...r, ...patch } : r));
   const move = (i: number, d: number) => { const r = [...rows]; [r[i], r[i + d]] = [r[i + d], r[i]]; onChange(r); };
+  const norm = (s: string) => s.trim().toLowerCase();
+  const usedBy = (i: number) => new Set(rows.filter((_, j) => j !== i).map((r) => norm(r.category)).filter(Boolean));
+  const addRow = () => {
+    const used = usedBy(-1);
+    const next = cats.find((c) => !used.has(norm(c)));
+    onChange([...rows, next ? { category: next, detail: catalog[next]?.[0] ?? "" } : { category: "", detail: "", _cc: true, _cd: true }]);
+  };
   return (
     <div className="space-y-2" data-testid="materials-editor">
       {rows.map((r, i) => {
         const customCat = r._cc || (!!r.category && !cats.includes(r.category));
         const opts = catalog[r.category] ?? [];
         const customDet = r._cd || customCat || (!!r.detail && !opts.includes(r.detail));
+        const used = usedBy(i);
+        const free = cats.filter((c) => c === r.category || !used.has(norm(c)));
+        const dup = !!r.category.trim() && used.has(norm(r.category));
         return (
           <div key={i} className="grid gap-2 rounded-md border border-line/60 p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]">
             <div className="space-y-1">
               <NSelect value={customCat ? CUSTOM : r.category} placeholder="Material…"
-                options={[...cats, { value: CUSTOM, label: "Custom…" }]}
+                options={[...free, { value: CUSTOM, label: "Custom…" }]}
                 onChange={(e) => e.target.value === CUSTOM ? set(i, { category: "", detail: "", _cc: true, _cd: true })
                   : set(i, { category: e.target.value, detail: catalog[e.target.value]?.[0] ?? "", _cc: false, _cd: false })} />
               {customCat && <Input value={r.category} onChange={(e) => set(i, { category: e.target.value })} placeholder="Material name" />}
+              {dup && <p className="text-xs text-amber-300" data-testid="material-dup-warning">Already added above — remove one.</p>}
             </div>
             <div className="space-y-1">
               {!customCat && <NSelect value={customDet ? CUSTOM : r.detail} placeholder="Details…"
@@ -104,7 +115,7 @@ export function MaterialsEditor({ rows, catalog, onChange }: { rows: UiMaterial[
             </div>
           </div>);
       })}
-      <Button variant="outline" size="sm" onClick={() => onChange([...rows, { category: "", detail: "" }])} data-testid="material-add-btn"><Plus className="h-4 w-4" />Add material</Button>
+      <Button variant="outline" size="sm" onClick={addRow} data-testid="material-add-btn"><Plus className="h-4 w-4" />Add material</Button>
     </div>
   );
 }
