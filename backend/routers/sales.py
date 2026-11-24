@@ -161,6 +161,9 @@ async def list_quotations(status: str | None = None, user: dict = Depends(curren
 @router.post("/quotations", response_model=Quotation)
 async def create_quotation(body: QuotationIn, user: dict = Depends(require(*MGMT))):
 	lead = await get_scoped_lead(body.lead_id or "", user)
+	existing = await db.quotations.find_one({"lead_id": lead["id"], "status": {"$nin": ["Rejected", "Expired"]}}, {"_id": 0, "number": 1})
+	if existing:
+		raise HTTPException(409, f"Lead already has quotation {existing['number']} — edit or revise that one instead")
 	s = await get_settings()
 	defaults = await get_quote_defaults()
 	data = body.model_dump(exclude={"change_note"})
